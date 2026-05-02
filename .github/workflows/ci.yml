@@ -124,7 +124,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      # Playwright is in @lumencast/runtime's devDependencies, not at
+      # the workspace root. Filter the exec to that package.
+      - run: pnpm --filter @lumencast/runtime exec playwright install --with-deps chromium
       - run: pnpm build
       - run: pnpm test:e2e
         continue-on-error: true # E2E suite ships incrementally; do not gate v0.1.x merges yet
