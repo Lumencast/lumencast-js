@@ -1,0 +1,39 @@
+{
+  "name": "@lumencast/protocol",
+  "version": "0.1.0",
+  "description": "LSDP/1 wire protocol — envelope, codec, sequence, leaf-path utilities, error taxonomy, types. Pure code, no IO.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "homepage": "https://github.com/Lumencast/lumencast-js/tree/main/packages/protocol",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lumencast/lumencast-js.git",
+    "directory": "packages/protocol"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "conformance": "vitest run --config vitest.conformance.config.ts"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.5"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@lumencast/example-conference-board",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Non-broadcast demo: vote queue + live Q&A counts driven by @lumencast/server.",
+  "type": "module",
+  "scripts": {
+    "start": "node --import tsx index.ts"
+  },
+  "dependencies": {
+    "@lumencast/protocol": "workspace:*",
+    "@lumencast/server": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0"
+  }
+}

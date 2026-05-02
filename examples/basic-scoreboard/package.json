@@ -1,0 +1,18 @@
+{
+  "name": "@lumencast/example-basic-scoreboard",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hello-world: mount @lumencast/runtime against @lumencast/dev-server, push two deltas, observe the DOM update.",
+  "type": "module",
+  "scripts": {
+    "start": "node --import tsx index.ts"
+  },
+  "dependencies": {
+    "@lumencast/dev-server": "workspace:*",
+    "@lumencast/protocol": "workspace:*",
+    "@lumencast/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0"
+  }
+}

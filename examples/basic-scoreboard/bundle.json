@@ -1,0 +1,55 @@
+{
+  "scene_version": "sha256:basic-scoreboard-v0",
+  "root": {
+    "kind": "frame",
+    "id": "root",
+    "props": { "size": { "w": 1920, "h": 1080 }, "background": "#0a0a0a" },
+    "children": [
+      {
+        "kind": "stack",
+        "id": "scoreboard",
+        "props": { "direction": "vertical", "gap": 24, "align": "center", "justify": "center" },
+        "children": [
+          {
+            "kind": "text",
+            "id": "title",
+            "props": { "style": { "fontSize": 64, "color": "#ffffff", "fontWeight": 700 } },
+            "bindings": { "value": "show.title" }
+          },
+          {
+            "kind": "stack",
+            "id": "scores",
+            "props": {
+              "direction": "horizontal",
+              "gap": 64,
+              "align": "center",
+              "justify": "center"
+            },
+            "children": [
+              {
+                "kind": "text",
+                "id": "home",
+                "props": { "style": { "fontSize": 96, "color": "#22d3ee" } },
+                "bindings": { "value": "score.home" }
+              },
+              {
+                "kind": "text",
+                "id": "vs",
+                "props": { "value": "vs", "style": { "fontSize": 32, "color": "#64748b" } }
+              },
+              {
+                "kind": "text",
+                "id": "away",
+                "props": { "style": { "fontSize": 96, "color": "#f97316" } },
+                "bindings": { "value": "score.away" }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "operator_inputs": [],
+  "external_adapters": [],
+  "assets": []
+}

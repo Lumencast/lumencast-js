@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol" },
+    { "path": "./packages/runtime" },
+    { "path": "./packages/server" },
+    { "path": "./packages/dev-server" },
+    { "path": "./packages/compiler" }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@lumencast/compiler",
+  "version": "0.1.0",
+  "description": "LSML 1.0 → flat RenderBundle compiler. Lets authors write idiomatic LSML and feed it to @lumencast/runtime.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "homepage": "https://github.com/Lumencast/lumencast-js/tree/main/packages/compiler",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lumencast/lumencast-js.git",
+    "directory": "packages/compiler"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lumencast/protocol": "workspace:*",
+    "@lumencast/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.5"
+  }
+}

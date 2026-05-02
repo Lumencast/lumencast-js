@@ -1,0 +1,42 @@
+{
+  "name": "@lumencast/dev-server",
+  "version": "0.1.0",
+  "description": "Mock LSDP/1 server for tests — WS protocol + HTTP bundle serving + /__mock/* control plane.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "homepage": "https://github.com/Lumencast/lumencast-js/tree/main/packages/dev-server",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lumencast/lumencast-js.git",
+    "directory": "packages/dev-server"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lumencast/protocol": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "vitest": "^4.1.5"
+  }
+}

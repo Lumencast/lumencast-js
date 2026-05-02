@@ -1,0 +1,13 @@
+Lumencast JS — TypeScript SDK
+Copyright 2026 The Lumencast Authors
+
+This product includes software developed by The Lumencast Authors
+(https://github.com/Lumencast).
+
+Licensed under the Apache License, Version 2.0. See LICENSE for terms.
+
+Portions of this work are derived from Solar v0.1.1
+(https://github.com/ZabLaboratory/Solar), released under the Apache
+License 2.0 by Zablab. The derived parts have been generalized,
+re-aligned to the LSDP/1 wire protocol, and re-namespaced to the
+@lumencast/* npm scope.

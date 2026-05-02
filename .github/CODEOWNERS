@@ -1,0 +1,13 @@
+# CODEOWNERS — every file routes through the maintainer until the
+# project grows enough to support a multi-team model. When teams
+# are formalized (per the protocol repo's GOVERNANCE.md § Phases),
+# update this file.
+
+*                          @ClodoCapeo
+
+/packages/protocol/        @ClodoCapeo
+/packages/runtime/         @ClodoCapeo
+/packages/server/          @ClodoCapeo
+/packages/dev-server/      @ClodoCapeo
+/packages/compiler/        @ClodoCapeo
+/.github/                  @ClodoCapeo

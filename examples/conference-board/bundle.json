@@ -1,0 +1,48 @@
+{
+  "scene_version": "sha256:conference-board-v0",
+  "root": {
+    "kind": "frame",
+    "id": "root",
+    "props": { "size": { "w": 1920, "h": 1080 }, "background": "#0f172a" },
+    "children": [
+      {
+        "kind": "stack",
+        "id": "main",
+        "props": { "direction": "vertical", "gap": 32, "padding": [40, 40, 40, 40] },
+        "children": [
+          {
+            "kind": "text",
+            "id": "title",
+            "props": { "style": { "fontSize": 56, "color": "#f8fafc", "fontWeight": 700 } },
+            "bindings": { "value": "session.title" }
+          },
+          {
+            "kind": "stack",
+            "id": "metrics",
+            "props": { "direction": "horizontal", "gap": 64 },
+            "children": [
+              {
+                "kind": "text",
+                "id": "questions",
+                "props": { "style": { "fontSize": 32, "color": "#22d3ee" } },
+                "bindings": { "value": "qa.count" }
+              },
+              {
+                "kind": "text",
+                "id": "votes",
+                "props": { "style": { "fontSize": 32, "color": "#f97316" } },
+                "bindings": { "value": "votes.total" }
+              }
+            ]
+          },
+          {
+            "kind": "text",
+            "id": "next-up",
+            "props": { "style": { "fontSize": 24, "color": "#94a3b8" } },
+            "bindings": { "value": "qa.next" }
+          }
+        ]
+      }
+    ]
+  }
+}

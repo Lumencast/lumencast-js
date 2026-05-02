@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "noUncheckedIndexedAccess": false
+  },
+  "references": [{ "path": "../protocol" }],
+  "include": ["src/**/*"],
+  "exclude": ["dist", "tests", "node_modules"]
+}
