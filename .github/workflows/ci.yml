@@ -70,6 +70,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
+      # Inter-package imports (server → protocol, dev-server → protocol)
+      # resolve via the dist/ entry declared in each package.json. We
+      # build before testing so those entries exist ; the alternative
+      # (vitest path aliases pointing at source) is a future cleanup
+      # if this becomes a build-time bottleneck.
+      - run: pnpm build
       - run: pnpm test
 
   build:
