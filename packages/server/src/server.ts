@@ -23,6 +23,7 @@ import {
   pong,
   snapshot as snapshotFrame,
   WS_SUBPROTOCOL,
+  WS_SUBPROTOCOL_V1_1,
   type ErrorCode,
   type Patch,
   type SceneVersion,
@@ -101,8 +102,12 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   const wss = new WebSocketServer({
     server: httpServer,
     path: wsPath,
-    handleProtocols: (offered: Set<string>) =>
-      offered.has(WS_SUBPROTOCOL) ? WS_SUBPROTOCOL : false,
+    handleProtocols: (offered: Set<string>) => {
+      // LSDP/1.1 preferred, 1.0 fallback. Anything else → reject upgrade.
+      if (offered.has(WS_SUBPROTOCOL_V1_1)) return WS_SUBPROTOCOL_V1_1;
+      if (offered.has(WS_SUBPROTOCOL)) return WS_SUBPROTOCOL;
+      return false;
+    },
   });
 
   const subscribers = new Set<Subscriber>();
@@ -154,7 +159,13 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
         return;
       }
       case "ping": {
-        sendFrame(sub, pong());
+        // LSDP/1.1 §3.5 — echo nonce verbatim in pong (omit if absent).
+        sendFrame(sub, pong(frame.nonce));
+        return;
+      }
+      case "unsubscribe": {
+        // LSDP/1.1 §4.4 — clean teardown. Close WS within 1s, no error frame.
+        sub.ws.close(1000, "unsubscribe");
         return;
       }
     }

@@ -4,8 +4,16 @@
 /** LSDP major version. Bumped only on breaking envelope/semantic changes. */
 export const PROTOCOL_VERSION = 1 as const;
 
-/** WebSocket subprotocol identifier — see LSDP/1 §1. */
+/** LSDP/1.0 WebSocket subprotocol — see LSDP/1 §1. Kept for 1.0 client compat. */
 export const WS_SUBPROTOCOL = "lsdp.v1" as const;
+
+/** LSDP/1.1 WebSocket subprotocol — opts into the additive 1.1 frame surface
+ * (since_sequence resume, unsubscribe, transition, cause, nonce, client_msg_id,
+ * from_scene_id + show transition). See LSDP/1.1 envelope/header section. */
+export const WS_SUBPROTOCOL_V1_1 = "lsdp.v1.1" as const;
+
+/** Canonical advertise/accept list, ordered by preference (1.1 first, 1.0 fallback). */
+export const WS_SUBPROTOCOLS = [WS_SUBPROTOCOL_V1_1, WS_SUBPROTOCOL] as const;
 
 /** A leaf path expressed as a dot-separated string. See LSDP/1 §10 for reserved namespaces. */
 export type LeafPath = string;
@@ -37,10 +45,45 @@ export type ErrorCode =
   | "TEST_SESSION_EXPIRED"
   | "INTERNAL";
 
+/** Per-leaf animation directive on a delta patch (LSDP/1.1 §3.2.2).
+ * Servers MAY emit ; runtimes interpret when applying the new value.
+ * 1.0 receivers ignore. */
+export interface TransitionSpec {
+  kind: "tween" | "spring" | "snap";
+  /** tween only */
+  duration_ms?: number;
+  /** tween only */
+  easing?: "linear" | "ease-in" | "ease-out" | "ease-in-out";
+  /** spring only */
+  stiffness?: number;
+  /** spring only */
+  damping?: number;
+}
+
+/** Optional provenance metadata on a delta (LSDP/1.1 §3.2.3). Receivers
+ * MUST NOT use it for semantic decisions — debug/audit only. */
+export interface Cause {
+  /** e.g. "operator:user-abc", "adapter:http_poll", "service:ranker" */
+  source: string;
+  /** Echoes InputFrame.client_msg_id verbatim when the delta was caused
+   * by an operator input. */
+  input_id?: string;
+}
+
+/** Show-level scene-swap transition on a scene_changed frame
+ * (LSDP/1.1 §3.3.1). Runtimes that don't recognise `kind` fall back
+ * to crossfade. */
+export interface SceneTransition {
+  kind: "crossfade" | (string & {}); // open string for vendor kinds
+  duration_ms?: number;
+}
+
 /** A leaf-grain patch. */
 export interface Patch {
   path: LeafPath;
   value: LeafValue;
+  /** Optional 1.1 per-leaf transition directive. */
+  transition?: TransitionSpec;
 }
 
 // --- Server → client frames -------------------------------------------------
@@ -67,6 +110,8 @@ export interface DeltaFrame extends BaseFrame {
   seq: number;
   /** Non-empty array of patches; applied left-to-right, atomic per frame. */
   patches: Patch[];
+  /** Optional provenance (LSDP/1.1 §3.2.3). Debug/audit only. */
+  cause?: Cause;
 }
 
 export interface SceneChangedFrame extends BaseFrame {
@@ -74,6 +119,10 @@ export interface SceneChangedFrame extends BaseFrame {
   seq: number;
   scene_id: SceneId;
   scene_version: SceneVersion;
+  /** Previously active scene id (LSDP/1.1 §3.3.1). 1.0 receivers ignore. */
+  from_scene_id?: SceneId;
+  /** Show-level transition between old and new scene (LSDP/1.1 §3.3.1). */
+  transition?: SceneTransition;
 }
 
 export interface ErrorFrame extends BaseFrame {
@@ -100,6 +149,8 @@ export interface ErrorFrame extends BaseFrame {
 export interface PongFrame {
   v: typeof PROTOCOL_VERSION;
   type: "pong";
+  /** Echoes PingFrame.nonce verbatim (LSDP/1.1 §3.5). 1.0 servers omit. */
+  nonce?: string;
 }
 
 export type ServerFrame = SnapshotFrame | DeltaFrame | SceneChangedFrame | ErrorFrame | PongFrame;
@@ -115,6 +166,11 @@ export interface SubscribeFrame {
   scene?: SceneId;
   /** Required for test mode with isolated session; forbidden otherwise. */
   session?: SessionId;
+  /** Last seq the client successfully observed before disconnect
+   * (LSDP/1.1 §4.1, §18). Server resumes with deltas from
+   * since_sequence+1 if the replay buffer covers, else fresh snapshot.
+   * 1.0 servers MUST ignore this field. Omit (or 0) means no resume. */
+  since_sequence?: number;
 }
 
 export interface InputFrame {
@@ -122,11 +178,24 @@ export interface InputFrame {
   type: "input";
   /** Non-empty. Server validates each path against active scene's `operator_inputs`. */
   patches: Patch[];
+  /** Free-form correlation tag (LSDP/1.1 §4.2). Server MUST echo
+   * verbatim in the resulting Delta.cause.input_id. 1.0 servers ignore. */
+  client_msg_id?: string;
 }
 
 export interface PingFrame {
   v: typeof PROTOCOL_VERSION;
   type: "ping";
+  /** Free-form correlation identifier (LSDP/1.1 §4.3). Receiver MUST
+   * echo verbatim in the Pong reply. */
+  nonce?: string;
 }
 
-export type ClientFrame = SubscribeFrame | InputFrame | PingFrame;
+/** Clean teardown signal (LSDP/1.1 §4.4). Server MUST close the
+ * WebSocket within 1 second of receipt. No data flows after. */
+export interface UnsubscribeFrame {
+  v: typeof PROTOCOL_VERSION;
+  type: "unsubscribe";
+}
+
+export type ClientFrame = SubscribeFrame | InputFrame | PingFrame | UnsubscribeFrame;
