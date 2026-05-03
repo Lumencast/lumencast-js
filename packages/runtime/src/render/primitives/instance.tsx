@@ -20,11 +20,12 @@
 //   - cycle detection (LSML 1.1 §4.9.2) — depth-8 limit applied at the
 //     resolver layer rather than the renderer
 
+import type { ReactElement } from "react";
 import type { PrimitiveProps } from "./index";
 
 const warned = new Set<string>();
 
-export function Instance({ resolved }: PrimitiveProps): JSX.Element | null {
+export function Instance({ resolved }: PrimitiveProps): ReactElement | null {
   const sceneId = resolved.scene_id as string | undefined;
   const sceneVersion = resolved.scene_version as string | undefined;
   if (!sceneId || !sceneVersion) {
