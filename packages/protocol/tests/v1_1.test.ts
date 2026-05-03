@@ -58,10 +58,7 @@ describe("Subscribe.since_sequence (LSDP/1.1 §4.1, §18)", () => {
 
 describe("Input.client_msg_id (LSDP/1.1 §4.2)", () => {
   it("round-trips through the input builder + codec", () => {
-    const frame = input(
-      [{ path: "x", value: 1 }],
-      { client_msg_id: "ui-9f3a" },
-    );
+    const frame = input([{ path: "x", value: 1 }], { client_msg_id: "ui-9f3a" });
     const raw = encodeFrame(frame);
     expect(raw).toContain(`"client_msg_id":"ui-9f3a"`);
     const decoded = decodeClientFrame(raw) as InputFrame;
@@ -70,9 +67,7 @@ describe("Input.client_msg_id (LSDP/1.1 §4.2)", () => {
 
   it("omits the field on bare inputs", () => {
     const frame = input([{ path: "x", value: 1 }]);
-    expect(encodeFrame(frame)).toBe(
-      `{"v":1,"type":"input","patches":[{"path":"x","value":1}]}`,
-    );
+    expect(encodeFrame(frame)).toBe(`{"v":1,"type":"input","patches":[{"path":"x","value":1}]}`);
   });
 });
 
@@ -165,9 +160,7 @@ describe("SceneChanged.from_scene_id + transition (§3.3.1)", () => {
 
 describe("backward-compat — 1.0 callers produce byte-identical wire", () => {
   it("Subscribe without 1.1 fields", () => {
-    expect(encodeFrame(subscribe({ token: "t" }))).toBe(
-      `{"v":1,"type":"subscribe","token":"t"}`,
-    );
+    expect(encodeFrame(subscribe({ token: "t" }))).toBe(`{"v":1,"type":"subscribe","token":"t"}`);
   });
 
   it("Delta without cause/transition", () => {

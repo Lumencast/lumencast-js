@@ -292,7 +292,9 @@ function assertTransitionSpec(v: unknown, label: string): TransitionSpec {
   if (typeof v["easing"] === "string") {
     const e = v["easing"];
     if (e !== "linear" && e !== "ease-in" && e !== "ease-out" && e !== "ease-in-out") {
-      throw protocolError(`${label}.easing must be one of "linear", "ease-in", "ease-out", "ease-in-out"`);
+      throw protocolError(
+        `${label}.easing must be one of "linear", "ease-in", "ease-out", "ease-in-out"`,
+      );
     }
     spec.easing = e;
   }
