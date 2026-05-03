@@ -8,7 +8,10 @@
 //
 // What it skips: auth (any token accepted), rate limiting, persistence.
 
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { dirname, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
   delta as deltaFrame,
@@ -39,6 +42,21 @@ export interface DevServerConfig {
   initialBundle: unknown;
   /** Initial state (path → value). */
   initialState: Record<string, LeafValue>;
+  /**
+   * Optional in-process demo host. When set, the dev-server serves a
+   * static HTML page at `GET /` that mounts the runtime against this
+   * very server. Use for local end-to-end demos: open the printed
+   * httpUrl in a browser to see the scene render live.
+   *
+   * `runtimeBundlePath` is the absolute path to the prebuilt runtime
+   * (`@lumencast/runtime/dist/lumencast.js`). Defaults to a workspace
+   * resolution lookup ; pass an explicit path to override.
+   */
+  demoHost?: {
+    runtimeBundlePath?: string;
+    /** Optional title shown in the browser tab. Defaults to "Lumencast demo". */
+    title?: string;
+  };
 }
 
 export interface DevServer {
@@ -286,6 +304,54 @@ export async function startDevServer(config: DevServerConfig): Promise<DevServer
       return;
     }
 
+    // Demo host (optional) — serves a static HTML at `/` and the
+    // runtime bundle at `/lumencast.js` so a developer can open the
+    // server URL in a browser and see the scene render live without
+    // any external Vite/build step.
+    if (config.demoHost && req.method === "GET" && (url === "/" || url === "/index.html")) {
+      const wsUrl = `ws://${host}:${port}/lsdp/v1`;
+      const title = config.demoHost.title ?? "Lumencast demo";
+      const html = renderDemoHostHtml({ wsUrl, title });
+      res.statusCode = 200;
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      res.end(html);
+      return;
+    }
+    if (config.demoHost && req.method === "GET" && isStaticAssetPath(url)) {
+      const bundlePath = resolveRuntimeBundlePath(config.demoHost.runtimeBundlePath);
+      if (!bundlePath) {
+        writeJson(res, 500, {
+          error: "runtime_bundle_not_found",
+          hint: "pnpm --filter @lumencast/runtime build (or pass demoHost.runtimeBundlePath)",
+        });
+        return;
+      }
+      // The runtime bundle is split into chunks. Serve any file under
+      // its dist/ tree by name, sandboxed to that directory.
+      const distDir = dirname(bundlePath);
+      const requested = url.split("?")[0]!.replace(/^\//, "");
+      const filePath = resolvePath(distDir, requested);
+      // Sandbox check : file must live under distDir.
+      if (!filePath.startsWith(distDir)) {
+        writeJson(res, 400, { error: "path_traversal" });
+        return;
+      }
+      if (!existsSync(filePath)) {
+        writeJson(res, 404, { error: "static_not_found", path: requested });
+        return;
+      }
+      try {
+        const body = readFileSync(filePath);
+        res.statusCode = 200;
+        res.setHeader("content-type", contentTypeFor(requested));
+        res.setHeader("cache-control", "no-store");
+        res.end(body);
+      } catch (e) {
+        writeJson(res, 500, { error: "static_read_failed", detail: String(e) });
+      }
+      return;
+    }
+
     if (req.method === "POST" && url === "/__mock/reset") {
       activeSceneId = config.initialSceneId;
       activeSceneVersion = config.initialSceneVersion;
@@ -336,4 +402,132 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   }
   const body = Buffer.concat(chunks).toString("utf8");
   return body.length === 0 ? {} : JSON.parse(body);
+}
+
+/**
+ * Resolve the on-disk path of `@lumencast/runtime`'s built bundle.
+ * Walks up from this file's directory looking for the workspace's
+ * `packages/runtime/dist/lumencast.js`. Returns the override when
+ * provided.
+ */
+/** Heuristic : a static asset request looks like `/something.ext`
+ * (single segment, with extension), and isn't an LSDP API path or a
+ * mock control plane path. The dev-server's other GET routes are
+ * matched before this one, so this only fires when nothing else
+ * caught the URL. */
+function isStaticAssetPath(url: string): boolean {
+  const path = url.split("?")[0] ?? "/";
+  if (path === "/" || path === "/index.html") return false; // handled above
+  if (path.startsWith("/lsdp/") || path.startsWith("/__mock/")) return false;
+  return /\.[a-zA-Z0-9]{1,8}$/.test(path);
+}
+
+function contentTypeFor(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".js") || lower.endsWith(".mjs"))
+    return "application/javascript; charset=utf-8";
+  if (lower.endsWith(".css")) return "text/css; charset=utf-8";
+  if (lower.endsWith(".html")) return "text/html; charset=utf-8";
+  if (lower.endsWith(".json") || lower.endsWith(".map")) return "application/json; charset=utf-8";
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".woff2")) return "font/woff2";
+  return "application/octet-stream";
+}
+
+function resolveRuntimeBundlePath(override?: string): string | null {
+  if (override) {
+    return existsSync(override) ? override : null;
+  }
+  // Best-effort workspace lookup. dev-server lives at
+  // packages/dev-server/src/server.ts ; the runtime bundle lives at
+  // packages/runtime/dist/lumencast.js relative to the same workspace
+  // root.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolvePath(here, "../../runtime/dist/lumencast.js"),
+    resolvePath(here, "../../../runtime/dist/lumencast.js"),
+    resolvePath(process.cwd(), "node_modules/@lumencast/runtime/dist/lumencast.js"),
+    resolvePath(process.cwd(), "packages/runtime/dist/lumencast.js"),
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return null;
+}
+
+/** Render the static demo HTML host. The page mounts the runtime
+ * against the same dev-server's WS endpoint and watches the scene
+ * update live.
+ *
+ * The runtime is built as ES modules with externalised peer deps
+ * (react, framer-motion, @preact/signals-react, etc). The demo HTML
+ * uses an importmap to resolve those bare specifiers to esm.sh CDN
+ * URLs so the browser can load everything without a bundler.
+ *
+ * @lumencast/protocol is also externalised — we map it back to the
+ * runtime's own dist relative path because it travels with the bundle.
+ */
+function renderDemoHostHtml(opts: { wsUrl: string; title: string }): string {
+  const importMap = {
+    imports: {
+      react: "https://esm.sh/react@19?dev",
+      "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime?dev",
+      "react/jsx-dev-runtime": "https://esm.sh/react@19/jsx-dev-runtime?dev",
+      "react-dom": "https://esm.sh/react-dom@19?dev",
+      "react-dom/client": "https://esm.sh/react-dom@19/client?dev",
+      "framer-motion": "https://esm.sh/framer-motion@12?dev&deps=react@19,react-dom@19",
+      "@preact/signals-react":
+        "https://esm.sh/@preact/signals-react@3?dev&deps=react@19,react-dom@19",
+      "@preact/signals-react/runtime":
+        "https://esm.sh/@preact/signals-react@3/runtime?dev&deps=react@19,react-dom@19",
+      "@lumencast/protocol": "https://esm.sh/@lumencast/protocol",
+    },
+  };
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(opts.title)}</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; background: #000; color: #fff; font-family: system-ui, sans-serif; }
+      #scene { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+      #lumencast-error { position: fixed; bottom: 0; left: 0; right: 0; padding: 12px; background: #b00020; font-family: monospace; font-size: 12px; display: none; white-space: pre-wrap; }
+      #lumencast-status { position: fixed; top: 8px; right: 8px; padding: 4px 8px; font-family: monospace; font-size: 11px; background: rgba(0,0,0,0.5); border-radius: 4px; opacity: 0.7; }
+    </style>
+    <script type="importmap">${JSON.stringify(importMap)}</script>
+  </head>
+  <body>
+    <div id="scene" data-testid="lumencast-scene-root"></div>
+    <div id="lumencast-status">connecting…</div>
+    <div id="lumencast-error"></div>
+    <script type="module">
+      import { mount } from "/lumencast.js";
+
+      const target = document.getElementById("scene");
+      const status = document.getElementById("lumencast-status");
+      const errBox = document.getElementById("lumencast-error");
+
+      mount({
+        target,
+        serverUrl: ${JSON.stringify(opts.wsUrl)},
+        token: "demo",
+        mode: "broadcast",
+        onStatus: (s) => { status.textContent = s; },
+        onError: (err) => {
+          errBox.style.display = "block";
+          errBox.textContent = "[lumencast] " + (err && err.message ? err.message : String(err));
+          console.error("[lumencast]", err);
+        },
+      });
+    </script>
+  </body>
+</html>`;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+  );
 }
