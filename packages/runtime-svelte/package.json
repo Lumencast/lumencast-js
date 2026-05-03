@@ -23,6 +23,13 @@
     "url": "https://github.com/Lumencast/lumencast-js.git",
     "directory": "packages/runtime-svelte"
   },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty",

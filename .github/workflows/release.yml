@@ -1,0 +1,114 @@
+name: Release
+
+# Triggered on `v*` tag pushes. Publishes every `@lumencast/*` workspace
+# package to npm in topological order so cross-package deps resolve. The
+# version in each package.json must match the tag (validated up front)
+# so a tag like `v0.1.0` always corresponds to `@lumencast/<pkg>@0.1.0`.
+#
+# Required GitHub Actions secrets :
+#   NPM_TOKEN   — npm Automation token with publish access on the scope
+#                 (e.g. @lumencast). Generate at npmjs.com → Settings →
+#                 Access Tokens → "Automation" type.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10"
+
+jobs:
+  publish:
+    name: publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # OIDC for npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: "https://registry.npmjs.org/"
+          cache: "pnpm"
+
+      - name: Verify tag matches package.json versions
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -e
+          tag_version="${REF_NAME#v}"
+          echo "Tag version : $tag_version"
+          mismatch=0
+          for pkg in packages/*/package.json; do
+            pkg_version=$(node -p "require('./$pkg').version")
+            pkg_name=$(node -p "require('./$pkg').name")
+            if [ "$pkg_version" != "$tag_version" ]; then
+              echo "::error file=$pkg::version mismatch — $pkg_name is $pkg_version, expected $tag_version"
+              mismatch=1
+            fi
+          done
+          [ $mismatch -eq 0 ] || exit 1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r build
+
+      - name: Test
+        run: pnpm -r test
+
+      # Publish in topological order. `protocol` has no internal deps
+      # and is required by every other package, so it goes first. The
+      # `runtime` is required by `compiler`, so runtime before compiler.
+      # `pnpm publish` rewrites `workspace:*` deps to the version being
+      # published before pushing each tarball.
+      - name: Publish @lumencast/protocol
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter @lumencast/protocol publish --no-git-checks --provenance
+
+      - name: Publish @lumencast/server
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter @lumencast/server publish --no-git-checks --provenance
+
+      - name: Publish @lumencast/dev-server
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter @lumencast/dev-server publish --no-git-checks --provenance
+
+      - name: Publish @lumencast/runtime
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter @lumencast/runtime publish --no-git-checks --provenance
+
+      - name: Publish @lumencast/runtime-svelte
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter @lumencast/runtime-svelte publish --no-git-checks --provenance
+
+      - name: Publish @lumencast/runtime-vue
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter @lumencast/runtime-vue publish --no-git-checks --provenance
+
+      - name: Publish @lumencast/compiler
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter @lumencast/compiler publish --no-git-checks --provenance
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: false
