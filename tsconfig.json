@@ -3,6 +3,8 @@
   "references": [
     { "path": "./packages/protocol" },
     { "path": "./packages/runtime" },
+    { "path": "./packages/runtime-svelte" },
+    { "path": "./packages/runtime-vue" },
     { "path": "./packages/server" },
     { "path": "./packages/dev-server" },
     { "path": "./packages/compiler" }

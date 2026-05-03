@@ -1,0 +1,43 @@
+{
+  "name": "@lumencast/runtime-svelte",
+  "version": "0.1.0",
+  "description": "Headless Svelte adapter for Lumencast — live LSDP/1 leaf state as Svelte stores.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "homepage": "https://github.com/Lumencast/lumencast-js/tree/main/packages/runtime-svelte",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lumencast/lumencast-js.git",
+    "directory": "packages/runtime-svelte"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lumencast/protocol": "workspace:*"
+  },
+  "peerDependencies": {
+    "svelte": ">=4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "svelte": "^5.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.0"
+  }
+}
