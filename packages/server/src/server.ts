@@ -1,7 +1,8 @@
 // HTTP + WebSocket server kit for LSDP/1.
 //
-// Single-scene, single-process. Compose multiple instances (or upgrade to a
-// router) for multi-scene deployments.
+// Single-scene at a time, single-process. The active scene is mutable so the
+// interop test control plane can swap it via /test/setup without restarting
+// the server.
 //
 // LSDP/1 spec compliance highlights:
 //   - WebSocket subprotocol negotiation: `lsdp.v1`
@@ -34,9 +35,9 @@ export interface ServerConfig {
   port?: number;
   /** Hostname to bind. Defaults to 127.0.0.1. */
   host?: string;
-  /** The scene this server serves. */
+  /** The initial scene this server serves. May be swapped via setActiveScene(). */
   scene: Scene;
-  /** Resolves a SceneVersion to its LSML bundle JSON. */
+  /** Resolves a SceneVersion to its LSML bundle JSON. May be swapped. */
   bundleProvider: (version: SceneVersion) => Promise<unknown> | unknown;
   /** Authenticate every subscribe; default accepts everything as `viewer`. */
   authenticate?: Authenticate;
@@ -49,6 +50,18 @@ export interface ServerConfig {
 export interface ServerHandle {
   readonly wsUrl: string;
   readonly httpUrl: string;
+  /**
+   * Replace the active scene. Detaches every subscriber (they receive a 1012
+   * "service restart" close so well-behaved clients reconnect cleanly).
+   * Test/interop only — production code should never call this.
+   */
+  setActiveScene(scene: Scene): void;
+  /** Replace the bundle provider. Test/interop only. */
+  setBundleProvider(fn: (version: SceneVersion) => Promise<unknown> | unknown): void;
+  /** Read the current active scene. */
+  activeScene(): Scene;
+  /** Drop all subscribers without replacing the scene. Test/interop only. */
+  reset(): void;
   close(): Promise<void>;
 }
 
@@ -64,7 +77,10 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   const wsPath = config.wsPath ?? "/lsdp/v1";
   const bundlePathPrefix = config.bundlePathPrefix ?? "/lsdp/v1/scenes";
   const authenticate = config.authenticate ?? defaultAuthenticate;
-  const scene = config.scene;
+
+  // Mutable refs — swappable via setActiveScene / setBundleProvider.
+  let activeScene: Scene = config.scene;
+  let bundleProvider = config.bundleProvider;
 
   const httpServer: Server = createServer((req, res) => handleHttp(req, res));
 
@@ -107,8 +123,15 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     try {
       frame = decodeClientFrame(raw);
     } catch (err) {
+      const message = err instanceof Error ? err.message : "decode error";
+      // LSDP/1 §13: envelope.v mismatch → close with code 1002 directly,
+      // no error frame (the v != 1 client wouldn't grok our v: 1 envelope).
+      if (message.includes("envelope.v")) {
+        sub.ws.close(1002, "VERSION_MISMATCH");
+        return;
+      }
       const code = err instanceof LumencastError ? err.code : "INVALID_VALUE";
-      sendError(sub, code, err instanceof Error ? err.message : "decode error", false);
+      sendError(sub, code, message, false);
       sub.ws.close(1002, code);
       return;
     }
@@ -148,15 +171,17 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       sub,
       snapshotFrame({
         seq: 1,
-        scene_id: scene.sceneId,
-        scene_version: scene.sceneVersion,
-        state: scene.store.snapshot(),
+        scene_id: activeScene.sceneId,
+        scene_version: activeScene.sceneVersion,
+        state: activeScene.store.snapshot(),
         ts: new Date().toISOString(),
       }),
     );
 
-    // Wire up delta forwarding.
-    sub.unsubscribePatches = scene.onPatches((patches) => {
+    // Wire up delta forwarding from the *current* active scene. If the active
+    // scene swaps, this subscriber stays bound to the old one and is detached
+    // by setActiveScene().
+    sub.unsubscribePatches = activeScene.onPatches((patches) => {
       sub.seq += 1;
       sendFrame(sub, deltaFrame({ seq: sub.seq, patches }));
     });
@@ -167,15 +192,21 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       sendError(sub, "AUTH_DENIED", "input before subscribe", false);
       return;
     }
-    // Atomic: validate every patch first; reject the whole frame on first failure.
+    // 1. Role-based authorization (LSDP/1 §9).
     for (const p of patches) {
       if (!canWritePath(sub.decision, p.path)) {
         sendError(sub, "WRITE_FORBIDDEN", `role ${sub.decision.role} cannot write ${p.path}`, true);
         return;
       }
     }
-    // Apply via the scene so existing subscribers (including this one) receive the echo as a delta.
-    scene.update(patches);
+    // 2. Schema validation against operator_inputs (LSDP/1 §4.2 + LSML §8).
+    //    Atomic: reject the whole frame on the first violation, no patches applied.
+    const validationError = activeScene.validateInput(patches);
+    if (validationError) {
+      sendError(sub, validationError.code, validationError.message, true);
+      return;
+    }
+    activeScene.update(patches);
   }
 
   function handleHttp(req: IncomingMessage, res: ServerResponse): void {
@@ -199,8 +230,8 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     const re = new RegExp(`^${escaped}/([^/?]+)/bundle(?:\\?v=([^&]+))?$`);
     const match = url.match(re);
     if (req.method === "GET" && match) {
-      const versionParam = match[2] ? decodeURIComponent(match[2]) : scene.sceneVersion;
-      Promise.resolve(config.bundleProvider(versionParam))
+      const versionParam = match[2] ? decodeURIComponent(match[2]) : activeScene.sceneVersion;
+      Promise.resolve(bundleProvider(versionParam))
         .then((bundle) => {
           if (!bundle) {
             writeJson(res, 404, { error: "bundle_not_found" });
@@ -233,16 +264,33 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     sendFrame(sub, errorFrame({ seq: sub.seq, code, message, recoverable }));
   }
 
-  async function close(): Promise<void> {
+  function detachAllSubscribers(closeCode = 1012, reason = "service restart"): void {
     for (const sub of subscribers) {
       sub.unsubscribePatches?.();
       try {
-        sub.ws.close(1000, "shutdown");
+        sub.ws.close(closeCode, reason);
       } catch {
         // ignore
       }
     }
     subscribers.clear();
+  }
+
+  function setActiveScene(scene: Scene): void {
+    detachAllSubscribers();
+    activeScene = scene;
+  }
+
+  function setBundleProvider(fn: (version: SceneVersion) => Promise<unknown> | unknown): void {
+    bundleProvider = fn;
+  }
+
+  function reset(): void {
+    detachAllSubscribers();
+  }
+
+  async function close(): Promise<void> {
+    detachAllSubscribers(1000, "shutdown");
     await new Promise<void>((resolve) => wss.close(() => resolve()));
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   }
@@ -250,6 +298,10 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   return {
     wsUrl: `ws://${host}:${port}${wsPath}`,
     httpUrl: `http://${host}:${port}`,
+    setActiveScene,
+    setBundleProvider,
+    activeScene: () => activeScene,
+    reset,
     close,
   };
 }

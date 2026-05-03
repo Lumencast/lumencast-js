@@ -6,8 +6,15 @@ export { LeafStore, type LeafStoreListener } from "./store.js";
 export {
   defaultAuthenticate,
   canWritePath,
+  StaticTokens,
   type Authenticate,
   type AuthDecision,
   type Role,
 } from "./auth.js";
 export { startHttpPoll, type HttpPollOptions } from "./adapters/http-poll.js";
+export {
+  startTestControl,
+  installTokens,
+  type TestControlOptions,
+  type TestControlHandle,
+} from "./test-control.js";
