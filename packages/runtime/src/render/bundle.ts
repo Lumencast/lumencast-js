@@ -23,7 +23,8 @@ export type RenderKind =
   | "image"
   | "shape"
   | "media"
-  | "repeat";
+  | "repeat"
+  | "instance";
 
 export interface RenderNode {
   kind: RenderKind;
