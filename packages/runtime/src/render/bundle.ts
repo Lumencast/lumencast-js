@@ -12,6 +12,7 @@
 // bundle pre-compile or use a hand-rolled adapter.
 
 import type { Transition } from "../animate/transitions.js";
+import type { Keyframes } from "../animate/keyframes.js";
 
 // --- bundle shape ----------------------------------------------------
 
@@ -39,6 +40,14 @@ export interface RenderNode {
    *  directives. The runtime applies these as CSS transitions / Framer Motion
    *  configs at render time. */
   transitions?: Record<string, Transition>;
+  /** LSML 1.1 §6.6 — multi-step keyframe sequence played on mount or
+   *  whenever `keyframes.key` (LeafPath) changes. Coexists with
+   *  `transitions` ; the runtime applies whichever was last triggered
+   *  (no blending — see §6.6 last paragraph). */
+  keyframes?: Keyframes;
+  /** LSML 1.1 §6.7 — only meaningful on `repeat`. Each iteration's
+   *  animations start `index * stagger_ms` after iteration 0. */
+  stagger_ms?: number;
   /** Children — already-inlined primitives only. */
   children?: RenderNode[];
 }
