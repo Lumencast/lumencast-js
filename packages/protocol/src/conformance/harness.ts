@@ -230,7 +230,9 @@ class Exec {
    */
   private async serverEmits(expected: Record<string, unknown>): Promise<void> {
     if (expected["type"] !== "delta" || !Array.isArray(expected["patches"])) {
-      throw new Error(`server-emits only supports type=delta today, got ${String(expected["type"])}`);
+      throw new Error(
+        `server-emits only supports type=delta today, got ${String(expected["type"])}`,
+      );
     }
     const patches = expected["patches"] as Array<{ path: string; value: unknown }>;
     const resolved = patches.map((p) => ({
