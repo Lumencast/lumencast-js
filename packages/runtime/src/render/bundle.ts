@@ -84,6 +84,55 @@ export interface RenderBundle {
   operator_inputs?: OperatorInput[];
   external_adapters?: ExternalAdapter[];
   assets?: Asset[];
+  /** LSML 1.1 §17.3 — capability profiles required for correct rendering.
+   * Each entry is a `<vendor>.<name>-<version>` string. The runtime
+   * checks every entry against its supported list ; an unrecognised
+   * profile raises BUNDLE_INCOMPATIBLE per §17.3.1. */
+  profiles?: string[];
+}
+
+/**
+ * Profiles the JS runtime advertises support for. Bundle authors who
+ * declare `profiles: [...]` get a hard `BUNDLE_INCOMPATIBLE` rejection
+ * when any entry is not in this set (LSML 1.1 §17.3.1).
+ *
+ * 1.1 ships with no standard profiles ; future minors / vendor specs
+ * register here. The `x-lumencast.color-srgb-1.0` entry is the
+ * default-color-space marker ; bundles that opt into a perceptual
+ * space (OKLCH) would request a different profile and currently
+ * reject.
+ */
+export const SUPPORTED_PROFILES: ReadonlySet<string> = new Set<string>([
+  "x-lumencast.color-srgb-1.0",
+]);
+
+export class BundleIncompatibleError extends Error {
+  public readonly code = "BUNDLE_INCOMPATIBLE" as const;
+  public readonly unsupportedProfiles: string[];
+  constructor(unsupportedProfiles: string[]) {
+    super(
+      `BUNDLE_INCOMPATIBLE: profile(s) not supported by this runtime: ${unsupportedProfiles.join(
+        ", ",
+      )}`,
+    );
+    this.name = "BundleIncompatibleError";
+    this.unsupportedProfiles = unsupportedProfiles;
+  }
+}
+
+/** Validate a bundle's `profiles[]` against the runtime's supported
+ * set. Throws `BundleIncompatibleError` listing every offending entry
+ * when at least one is not supported. */
+export function validateBundleProfiles(
+  bundle: { profiles?: string[] },
+  supported: ReadonlySet<string> = SUPPORTED_PROFILES,
+): void {
+  const profiles = bundle.profiles;
+  if (!profiles || profiles.length === 0) return;
+  const missing = profiles.filter((p) => !supported.has(p));
+  if (missing.length > 0) {
+    throw new BundleIncompatibleError(missing);
+  }
 }
 
 // --- fetch + cache ---------------------------------------------------
@@ -118,6 +167,10 @@ class FetcherImpl implements BundleFetcher {
   }
 
   preload(bundle: RenderBundle): void {
+    // LSML 1.1 §17.3.1 — reject early if any declared profile is
+    // unsupported by this runtime. Authors get an actionable error
+    // instead of a silent rendering glitch.
+    validateBundleProfiles(bundle);
     this.cache.set(bundle.scene_version, bundle);
   }
 
@@ -135,6 +188,7 @@ class FetcherImpl implements BundleFetcher {
         `bundle scene_version mismatch: expected ${sceneVersion}, got ${json.scene_version}`,
       );
     }
+    validateBundleProfiles(json);
     this.cache.set(sceneVersion, json);
     return json;
   }
