@@ -82,8 +82,19 @@ export interface ErrorFrame extends BaseFrame {
   code: ErrorCode;
   message: string;
   recoverable: boolean;
-  /** Optional, e.g. for `RATE_LIMIT`. */
+  /**
+   * REQUIRED for path-scoped codes (`WRITE_FORBIDDEN`, `UNKNOWN_PATH`,
+   * `INVALID_VALUE`) per LSDP/1.0.1 §3.4.1. Forbidden for codes that
+   * are not path-scoped.
+   */
+  path?: LeafPath;
+  /** Optional, for `RATE_LIMIT`. */
   retry_after_ms?: number;
+  /** Optional, for `BUNDLE_INCOMPATIBLE`. */
+  requested_version?: string;
+  supported_version?: string;
+  /** Optional, for `TEST_SESSION_EXPIRED`. */
+  session?: string;
 }
 
 export interface PongFrame {

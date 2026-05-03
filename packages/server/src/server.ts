@@ -131,8 +131,15 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
         return;
       }
       const code = err instanceof LumencastError ? err.code : "INVALID_VALUE";
-      sendError(sub, code, message, false);
-      sub.ws.close(1002, code);
+      const recoverable = err instanceof LumencastError ? err.recoverable : false;
+      const path = err instanceof LumencastError ? err.path : undefined;
+      sendError(sub, code, message, recoverable, path !== undefined ? { path } : undefined);
+      // Recoverable decode errors (e.g. forbidden object value in a single
+      // patch per §3.2.1) MUST keep the connection open ; only fatal
+      // structural errors close.
+      if (!recoverable) {
+        sub.ws.close(1002, code);
+      }
       return;
     }
     if (frame === null) return; // forward-compat ignore
@@ -195,7 +202,13 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     // 1. Role-based authorization (LSDP/1 §9).
     for (const p of patches) {
       if (!canWritePath(sub.decision, p.path)) {
-        sendError(sub, "WRITE_FORBIDDEN", `role ${sub.decision.role} cannot write ${p.path}`, true);
+        sendError(
+          sub,
+          "WRITE_FORBIDDEN",
+          `role ${sub.decision.role} cannot write ${p.path}`,
+          true,
+          { path: p.path },
+        );
         return;
       }
     }
@@ -203,7 +216,9 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     //    Atomic: reject the whole frame on the first violation, no patches applied.
     const validationError = activeScene.validateInput(patches);
     if (validationError) {
-      sendError(sub, validationError.code, validationError.message, true);
+      sendError(sub, validationError.code, validationError.message, true, {
+        path: validationError.path,
+      });
       return;
     }
     activeScene.update(patches);
@@ -259,9 +274,20 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     code: ErrorCode,
     message: string,
     recoverable: boolean,
+    extras?: { path?: string; retry_after_ms?: number },
   ): void {
     sub.seq += 1;
-    sendFrame(sub, errorFrame({ seq: sub.seq, code, message, recoverable }));
+    sendFrame(
+      sub,
+      errorFrame({
+        seq: sub.seq,
+        code,
+        message,
+        recoverable,
+        ...(extras?.path !== undefined ? { path: extras.path } : {}),
+        ...(extras?.retry_after_ms !== undefined ? { retry_after_ms: extras.retry_after_ms } : {}),
+      }),
+    );
   }
 
   function detachAllSubscribers(closeCode = 1012, reason = "service restart"): void {

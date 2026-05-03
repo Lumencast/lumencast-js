@@ -232,19 +232,27 @@ function assertPatches(v: unknown, label: string): Patch[] {
     if (typeof p["path"] !== "string") {
       throw protocolError(`${label}[${i}].path must be a string`);
     }
-    assertLeafValue(p["value"], `${label}[${i}].value`);
+    assertLeafValue(p["value"], `${label}[${i}].value`, p["path"]);
     return { path: p["path"], value: p["value"] as LeafValue };
   });
 }
 
-function assertLeafValue(v: unknown, label: string): asserts v is LeafValue {
+function assertLeafValue(v: unknown, label: string, path?: string): asserts v is LeafValue {
   if (v === null) return;
   if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return;
   if (Array.isArray(v)) {
-    v.forEach((item, i) => assertLeafValue(item, `${label}[${i}]`));
+    v.forEach((item, i) => assertLeafValue(item, `${label}[${i}]`, path));
     return;
   }
-  throw protocolError(`${label}: objects are forbidden in patch values, push leaf-grain instead`);
+  // Per LSDP/1.0.1 §3.2.1, objects are forbidden as patch values.
+  // The right error code is INVALID_VALUE (recoverable, path-scoped),
+  // not INTERNAL — see ERROR-CODES.md §1.4 + LSDP-1.md §3.4.1.
+  throw new LumencastError({
+    code: "INVALID_VALUE",
+    message: `${label}: objects are forbidden in patch values, push leaf-grain instead`,
+    recoverable: true,
+    ...(path !== undefined ? { path } : {}),
+  });
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

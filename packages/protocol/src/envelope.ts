@@ -85,7 +85,15 @@ export interface ErrorInit {
   code: ErrorCode;
   message: string;
   recoverable: boolean;
+  /**
+   * REQUIRED for path-scoped codes (`WRITE_FORBIDDEN`, `UNKNOWN_PATH`,
+   * `INVALID_VALUE`) per LSDP/1.0.1 §3.4.1.
+   */
+  path?: LeafPath;
   retry_after_ms?: number;
+  requested_version?: string;
+  supported_version?: string;
+  session?: string;
   ts?: string;
 }
 
@@ -98,7 +106,11 @@ export function errorFrame(init: ErrorInit): ErrorFrame {
     message: init.message,
     recoverable: init.recoverable,
   };
+  if (init.path !== undefined) frame.path = init.path;
   if (init.retry_after_ms !== undefined) frame.retry_after_ms = init.retry_after_ms;
+  if (init.requested_version !== undefined) frame.requested_version = init.requested_version;
+  if (init.supported_version !== undefined) frame.supported_version = init.supported_version;
+  if (init.session !== undefined) frame.session = init.session;
   if (init.ts !== undefined) frame.ts = init.ts;
   return frame;
 }

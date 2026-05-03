@@ -26,6 +26,11 @@ export interface LumencastErrorInit {
   code: ErrorCode;
   message: string;
   recoverable: boolean;
+  /**
+   * REQUIRED for path-scoped codes (`WRITE_FORBIDDEN`, `UNKNOWN_PATH`,
+   * `INVALID_VALUE`) per LSDP/1.0.1 §3.4.1.
+   */
+  path?: string;
   retry_after_ms?: number;
 }
 
@@ -36,6 +41,7 @@ export interface LumencastErrorInit {
 export class LumencastError extends Error {
   readonly code: ErrorCode;
   readonly recoverable: boolean;
+  readonly path: string | undefined;
   readonly retry_after_ms: number | undefined;
 
   constructor(init: LumencastErrorInit) {
@@ -43,6 +49,7 @@ export class LumencastError extends Error {
     this.name = "LumencastError";
     this.code = init.code;
     this.recoverable = init.recoverable;
+    this.path = init.path;
     this.retry_after_ms = init.retry_after_ms;
   }
 }
