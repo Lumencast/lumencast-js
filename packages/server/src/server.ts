@@ -24,6 +24,7 @@ import {
   snapshot as snapshotFrame,
   WS_SUBPROTOCOL,
   WS_SUBPROTOCOL_V1_1,
+  type Cause,
   type ErrorCode,
   type Patch,
   type SceneVersion,
@@ -155,7 +156,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
         return;
       }
       case "input": {
-        await handleInput(sub, frame.patches);
+        await handleInput(sub, frame.patches, frame.client_msg_id);
         return;
       }
       case "ping": {
@@ -199,13 +200,17 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     // Wire up delta forwarding from the *current* active scene. If the active
     // scene swaps, this subscriber stays bound to the old one and is detached
     // by setActiveScene().
-    sub.unsubscribePatches = activeScene.onPatches((patches) => {
+    sub.unsubscribePatches = activeScene.onPatches((patches, cause) => {
       sub.seq += 1;
-      sendFrame(sub, deltaFrame({ seq: sub.seq, patches }));
+      sendFrame(sub, deltaFrame({ seq: sub.seq, patches, cause }));
     });
   }
 
-  async function handleInput(sub: Subscriber, patches: Patch[]): Promise<void> {
+  async function handleInput(
+    sub: Subscriber,
+    patches: Patch[],
+    clientMsgId?: string,
+  ): Promise<void> {
     if (!sub.decision) {
       sendError(sub, "AUTH_DENIED", "input before subscribe", false);
       return;
@@ -232,7 +237,16 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       });
       return;
     }
-    activeScene.update(patches);
+    // LSDP/1.1 §3.2.3 — derive provenance metadata for the resulting delta.
+    // The `source` is conventionally `<role>:<subject>` ; when client_msg_id
+    // is provided, echo it verbatim into `input_id` for optimistic-UI
+    // correlation (§4.2). Cause is omitted entirely if neither yields data,
+    // so 1.0 wire shape is preserved when no client opts into 1.1.
+    const subject = sub.decision.subject ?? sub.decision.role;
+    const cause: Cause | undefined = clientMsgId
+      ? { source: `${sub.decision.role}:${subject}`, input_id: clientMsgId }
+      : undefined;
+    activeScene.update(patches, cause);
   }
 
   function handleHttp(req: IncomingMessage, res: ServerResponse): void {

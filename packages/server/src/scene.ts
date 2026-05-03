@@ -2,7 +2,7 @@
 // Wraps a LeafStore + identity (sceneId, sceneVersion) and an optional
 // operator_inputs schema used by the server to validate `input` frames.
 
-import type { LeafPath, LeafValue, Patch, SceneId, SceneVersion } from "@lumencast/protocol";
+import type { Cause, LeafPath, LeafValue, Patch, SceneId, SceneVersion } from "@lumencast/protocol";
 import { LeafStore } from "./store.js";
 
 export interface OperatorInputDecl {
@@ -39,10 +39,12 @@ export interface Scene {
   readonly sceneVersion: SceneVersion;
   readonly store: LeafStore;
   readonly operatorInputs: OperatorInputDecl[];
-  /** Update one or more leaves. Atomic per call. */
-  update(patches: Patch[] | Record<LeafPath, LeafValue>): void;
-  /** Subscribe to all patches emitted by this scene. */
-  onPatches(listener: (patches: Patch[]) => void): () => void;
+  /** Update one or more leaves. Atomic per call. Optional `cause` propagates
+   * to subscribers as the resulting Delta.cause (LSDP/1.1 §3.2.3). */
+  update(patches: Patch[] | Record<LeafPath, LeafValue>, cause?: Cause): void;
+  /** Subscribe to all patches emitted by this scene. The `cause` argument is
+   * present when the patches were produced via update(..., cause). */
+  onPatches(listener: (patches: Patch[], cause?: Cause) => void): () => void;
   /**
    * Validate input patches against the declared operator_inputs schema.
    * Returns the first error or null. The reserved `__test.*` namespace is
@@ -57,11 +59,11 @@ export function createScene(init: SceneInit): Scene {
   const inputsByPath = new Map<LeafPath, OperatorInputDecl>();
   for (const oi of operatorInputs) inputsByPath.set(oi.path, oi);
 
-  function update(input: Patch[] | Record<LeafPath, LeafValue>): void {
+  function update(input: Patch[] | Record<LeafPath, LeafValue>, cause?: Cause): void {
     const patches: Patch[] = Array.isArray(input)
       ? input
       : Object.entries(input).map(([path, value]) => ({ path, value }));
-    store.apply(patches);
+    store.apply(patches, cause);
   }
 
   function validateInput(patches: Patch[]): ValidationError | null {
