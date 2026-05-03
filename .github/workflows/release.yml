@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
+      contents: write # for softprops/action-gh-release
       id-token: write # OIDC for npm provenance
     steps:
       - uses: actions/checkout@v4
