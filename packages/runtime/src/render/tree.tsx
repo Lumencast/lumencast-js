@@ -8,6 +8,7 @@ import type { Transition } from "../animate/transitions";
 import { PRIMITIVES } from "./primitives";
 import { PathScopeProvider, scopedPath, usePathScope } from "./scope";
 import type { RenderNode } from "./bundle";
+import { UniversalWrapper, type SizingMode } from "./universal-wrapper";
 
 export interface TreeProps {
   node: RenderNode;
@@ -57,11 +58,34 @@ function Node({ node, store }: TreeProps): ReactNode {
     <Tree key={child.id ?? idx} node={child} store={store} />
   ));
 
+  // LSML 1.1 §5.4 — universal props applied uniformly across all
+  // primitives. Pulled out of `resolved` so primitives can ignore
+  // them ; the wrapper composes with whatever transform/opacity the
+  // primitive's own framer-motion may apply.
+  const universal = {
+    visible: typeof resolved.visible === "boolean" ? resolved.visible : undefined,
+    opacity:
+      typeof resolved.universal_opacity === "number" ? resolved.universal_opacity : undefined,
+    rotation: typeof resolved.rotation === "number" ? resolved.rotation : undefined,
+    sizing: extractSizing(resolved.sizing),
+  };
+
   return (
-    <Primitive resolved={resolved} transitionFor={transitionFor}>
-      {children}
-    </Primitive>
+    <UniversalWrapper {...universal}>
+      <Primitive resolved={resolved} transitionFor={transitionFor}>
+        {children}
+      </Primitive>
+    </UniversalWrapper>
   );
+}
+
+function extractSizing(value: unknown): { x?: SizingMode; y?: SizingMode } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const obj = value as { x?: unknown; y?: unknown };
+  const out: { x?: SizingMode; y?: SizingMode } = {};
+  if (obj.x === "fixed" || obj.x === "hug" || obj.x === "fill") out.x = obj.x;
+  if (obj.y === "fixed" || obj.y === "hug" || obj.y === "fill") out.y = obj.y;
+  return out.x !== undefined || out.y !== undefined ? out : undefined;
 }
 
 function Repeat({ node, store }: TreeProps): ReactNode {
