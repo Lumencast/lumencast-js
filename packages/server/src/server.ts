@@ -69,7 +69,8 @@ export interface ServerHandle {
 
 interface Subscriber {
   ws: WebSocket;
-  seq: number;
+  // Per-scene seq (LSDP/1.1 §18.1.1) — see activeScene.currentSeq().
+  // Subscribers don't carry their own counter.
   decision: AuthDecision | null;
   unsubscribePatches: (() => void) | null;
 }
@@ -114,7 +115,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   const subscribers = new Set<Subscriber>();
 
   wss.on("connection", (ws) => {
-    const sub: Subscriber = { ws, seq: 0, decision: null, unsubscribePatches: null };
+    const sub: Subscriber = { ws, decision: null, unsubscribePatches: null };
     subscribers.add(sub);
 
     ws.on("message", (data) => handleMessage(sub, String(data)).catch(() => undefined));
@@ -152,7 +153,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
     switch (frame.type) {
       case "subscribe": {
-        await handleSubscribe(sub, frame.token);
+        await handleSubscribe(sub, frame.token, frame.since_sequence);
         return;
       }
       case "input": {
@@ -172,7 +173,11 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     }
   }
 
-  async function handleSubscribe(sub: Subscriber, token: string): Promise<void> {
+  async function handleSubscribe(
+    sub: Subscriber,
+    token: string,
+    sinceSequence?: number,
+  ): Promise<void> {
     let decision: AuthDecision;
     try {
       decision = await authenticate(token);
@@ -185,24 +190,39 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     }
     sub.decision = decision;
 
-    sub.seq = 1;
-    sendFrame(
-      sub,
-      snapshotFrame({
-        seq: 1,
-        scene_id: activeScene.sceneId,
-        scene_version: activeScene.sceneVersion,
-        state: activeScene.store.snapshot(),
-        ts: new Date().toISOString(),
-      }),
-    );
+    // LSDP/1.1 §4.1, §18 — honour since_sequence when the replay buffer
+    // covers the gap. Otherwise fall back to a fresh snapshot at the
+    // current scene seq.
+    const curSeq = activeScene.currentSeq();
+    let useReplay = false;
+    if (sinceSequence !== undefined && sinceSequence > 0 && sinceSequence <= curSeq) {
+      const { records, covered } = activeScene.replaySince(sinceSequence);
+      if (covered) {
+        useReplay = true;
+        for (const r of records) {
+          sendFrame(sub, deltaFrame({ seq: r.seq, patches: r.patches, cause: r.cause }));
+        }
+      }
+    }
+    if (!useReplay) {
+      sendFrame(
+        sub,
+        snapshotFrame({
+          seq: curSeq,
+          scene_id: activeScene.sceneId,
+          scene_version: activeScene.sceneVersion,
+          state: activeScene.store.snapshot(),
+          ts: new Date().toISOString(),
+        }),
+      );
+    }
 
     // Wire up delta forwarding from the *current* active scene. If the active
     // scene swaps, this subscriber stays bound to the old one and is detached
-    // by setActiveScene().
-    sub.unsubscribePatches = activeScene.onPatches((patches, cause) => {
-      sub.seq += 1;
-      sendFrame(sub, deltaFrame({ seq: sub.seq, patches, cause }));
+    // by setActiveScene(). Per-scene seq (§18.1.1) — the listener receives
+    // the seq directly from the scene.
+    sub.unsubscribePatches = activeScene.onPatches((seq, patches, cause) => {
+      sendFrame(sub, deltaFrame({ seq, patches, cause }));
     });
   }
 
@@ -301,11 +321,13 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     recoverable: boolean,
     extras?: { path?: string; retry_after_ms?: number },
   ): void {
-    sub.seq += 1;
+    // Errors are connection-scoped, not scene-scoped events
+    // (LSDP/1.1 §18.1.1) — they ride the current scene seq without
+    // advancing it.
     sendFrame(
       sub,
       errorFrame({
-        seq: sub.seq,
+        seq: activeScene.currentSeq(),
         code,
         message,
         recoverable,
