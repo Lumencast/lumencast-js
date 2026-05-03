@@ -179,6 +179,10 @@ class Exec {
   private readonly inbox: string[] = [];
   private readonly waiters: Array<(v: string) => void> = [];
   private closed = false;
+  /** WebSocket close code (RFC 6455). Set on the `close` event ; used
+   * by `expect-no-frame-for` to distinguish clean shutdown (1000/1001/
+   * 1005) from abnormal closures. */
+  private closeCode: number | null = null;
 
   constructor(
     private readonly ws: WebSocket,
@@ -194,8 +198,9 @@ class Exec {
       if (w) w(s);
       else this.inbox.push(s);
     });
-    this.ws.on("close", () => {
+    this.ws.on("close", (code: number) => {
       this.closed = true;
+      this.closeCode = code;
       // Wake every waiter so they reject promptly.
       while (this.waiters.length > 0) this.waiters.shift()!(""); // signal close
     });
@@ -333,7 +338,16 @@ class Exec {
       const raw = await this.recv(durationMs);
       throw new Error(`expected silence for ${durationMs}ms, got frame: ${raw}`);
     } catch (err) {
-      if ((err as Error).message === "recv timeout") return;
+      const msg = (err as Error).message;
+      if (msg === "recv timeout") return;
+      // SCENARIO-FORMAT.md `expect-no-frame-for` § Connection-close
+      // semantics : clean WS close (1000/1001/1005) within the duration
+      // counts as success — no data flowed. Abnormal closures still
+      // surface as errors.
+      if (msg === "connection closed") {
+        const code = this.closeCode;
+        if (code === 1000 || code === 1001 || code === 1005) return;
+      }
       throw err;
     }
   }
