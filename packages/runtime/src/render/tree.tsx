@@ -9,6 +9,8 @@ import { PRIMITIVES } from "./primitives";
 import { PathScopeProvider, scopedPath, usePathScope } from "./scope";
 import type { RenderNode } from "./bundle";
 import { UniversalWrapper, type SizingMode } from "./universal-wrapper";
+import { KeyframePlayer } from "./keyframe-player";
+import { StaggerContext, computeStaggerDelayMs } from "./stagger-context";
 
 export interface TreeProps {
   node: RenderNode;
@@ -85,13 +87,26 @@ function Node({ node, store }: TreeProps): ReactNode {
     sizing: extractSizing(resolved.sizing),
   };
 
-  return (
+  const body = (
     <UniversalWrapper {...universal}>
       <Primitive resolved={resolved} transitionFor={transitionFor}>
         {children}
       </Primitive>
     </UniversalWrapper>
   );
+
+  // LSML 1.1 §6.6 — when a primitive declares keyframes, wrap the
+  // rendered subtree in a player that drives framer-motion through the
+  // step path. The player handles replay-on-key-change and reads any
+  // ambient stagger delay from StaggerContext (§6.7).
+  if (node.keyframes) {
+    return (
+      <KeyframePlayer keyframes={node.keyframes} store={store}>
+        {body}
+      </KeyframePlayer>
+    );
+  }
+  return body;
 }
 
 function extractSizing(value: unknown): { x?: SizingMode; y?: SizingMode } | undefined {
@@ -117,13 +132,29 @@ function Repeat({ node, store }: TreeProps): ReactNode {
   const template = node.children?.[0];
   if (!template) return null;
 
+  // LSML 1.1 §6.7 — `stagger_ms` produces wave-like reveals across
+  // iterations. We compute the per-iteration delay (capped) and feed
+  // it to descendants via StaggerContext so the KeyframePlayer (and
+  // future animate-aware primitives) can pick it up without per-
+  // iteration scripting. `stagger_ms: 0` (or unset) is a no-op.
+  const staggerMs = typeof node.stagger_ms === "number" ? node.stagger_ms : 0;
+
   return (
     <>
-      {items.map((_item, idx) => (
-        <PathScopeProvider key={idx} prefix={`${itemsBinding ?? ""}.${idx}`}>
-          <Tree node={template} store={store} />
-        </PathScopeProvider>
-      ))}
+      {items.map((_item, idx) => {
+        const delayMs = computeStaggerDelayMs(idx, staggerMs);
+        const tree = (
+          <PathScopeProvider key={idx} prefix={`${itemsBinding ?? ""}.${idx}`}>
+            <Tree node={template} store={store} />
+          </PathScopeProvider>
+        );
+        if (delayMs <= 0) return tree;
+        return (
+          <StaggerContext.Provider key={idx} value={delayMs}>
+            {tree}
+          </StaggerContext.Provider>
+        );
+      })}
     </>
   );
 }
