@@ -12,6 +12,7 @@
 //
 // Exit code: 0 if all PASS, 1 if any FAIL.
 
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Harness, loadScenarios, type Report, type Tag } from "./conformance/index.js";
@@ -127,8 +128,26 @@ function resolveScenariosDir(flag: string | undefined): string | null {
   if (flag) return resolve(flag);
   const repo = process.env["LUMENCAST_PROTOCOL_REPO"];
   if (repo) return resolve(repo, "conformance/v1/scenarios");
-  // Fallback: assume the protocol repo is a sibling of the monorepo.
-  return resolve(process.cwd(), "../lumencast-protocol/conformance/v1/scenarios");
+  // Fallback: try several candidates so the CLI works whether it is
+  // invoked from the lumencast-js root, from inside the lumencast-protocol
+  // checkout (e.g. interop/run-matrix.sh), or from a parallel directory
+  // structure. Returns the first candidate that resolves to an existing
+  // directory ; falls back to the canonical sibling layout so the error
+  // message still points at the expected path.
+  const cwd = process.cwd();
+  const candidates = [
+    // Already inside a lumencast-protocol checkout (cwd is interop/, scripts/, …).
+    resolve(cwd, "../conformance/v1/scenarios"),
+    resolve(cwd, "conformance/v1/scenarios"),
+    // Sibling of the monorepo (the original heuristic).
+    resolve(cwd, "../lumencast-protocol/conformance/v1/scenarios"),
+    // Parent-of-parent sibling (helps when invoked from a deeper dist/ shim).
+    resolve(cwd, "../../lumencast-protocol/conformance/v1/scenarios"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return candidates[2] ?? candidates[0] ?? null;
 }
 
 function printReport(rep: Report): void {
