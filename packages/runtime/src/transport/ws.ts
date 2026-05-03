@@ -16,6 +16,7 @@ import {
   encodeFrame,
   LumencastError,
   SequenceTracker,
+  WS_SUBPROTOCOL_V1_1,
   WS_SUBPROTOCOLS,
   input as inputFrame,
   subscribe as subscribeFrame,
@@ -202,11 +203,22 @@ export class WsClient {
 
   private handleOpen(token: string): void {
     if (!this.socket) return;
-    this.seq.reset();
+    // LSDP/1.1 §4.1, §18 — if we have a previously-observed seq AND the
+    // negotiated subprotocol is 1.1, request an incremental resume.
+    // The server will EITHER ship buffered deltas (cache stays valid)
+    // OR a fresh snapshot which we rebase via observeSnapshot.
+    const subprotocol = this.socket.protocol;
+    const canResume = subprotocol === WS_SUBPROTOCOL_V1_1 && this.seq.last > 0;
+    const sinceSequence = canResume ? this.seq.last : undefined;
+    if (!canResume) {
+      // Fresh subscription (no resume) — reset the tracker baseline.
+      this.seq.reset();
+    }
     const frame = subscribeFrame({
       token,
       ...(this.opts.scene !== undefined ? { scene: this.opts.scene } : {}),
       ...(this.opts.session !== undefined ? { session: this.opts.session } : {}),
+      ...(sinceSequence !== undefined ? { since_sequence: sinceSequence } : {}),
     });
     this.socket.send(encodeFrame(frame));
   }
@@ -229,15 +241,19 @@ export class WsClient {
 
     switch (frame.type) {
       case "snapshot": {
-        const obs = this.seq.observe(frame.seq);
-        if (obs.kind === "gap") {
+        // LSDP/1.1 §18.1.1 — snapshot rebases the tracker to its seq
+        // value. This is the ONLY valid way to set or change the
+        // tracker's baseline (handles fresh sub, scene_changed, and
+        // back-pressure recovery uniformly).
+        if (frame.seq < 1) {
           this.opts.onTransportError?.(
-            new TransportError(`snapshot seq must be 1, got ${frame.seq}`, true, "VERSION_GAP"),
+            new TransportError(`snapshot seq must be >= 1, got ${frame.seq}`, true, "VERSION_GAP"),
           );
           this.closeSocket();
           this.scheduleReconnect();
           return;
         }
+        this.seq.observeSnapshot(frame.seq);
         this.schedule.reset();
         this.setStatus("live");
         this.opts.onSnapshot?.(frame);
@@ -262,7 +278,9 @@ export class WsClient {
         return;
       }
       case "scene_changed": {
-        // The next snapshot resets seq to 1 — pre-reset the tracker so it accepts seq=1.
+        // The next snapshot will rebase the tracker via observeSnapshot.
+        // Reset here so the tracker doesn't fault on the SceneChanged's
+        // own seq (which advances prev's counter one final step).
         this.seq.reset();
         this.opts.onSceneChanged?.(frame);
         return;
