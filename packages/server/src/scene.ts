@@ -4,6 +4,7 @@
 
 import type { Cause, LeafPath, LeafValue, Patch, SceneId, SceneVersion } from "@lumencast/protocol";
 import { LeafStore } from "./store.js";
+import { DEFAULT_REPLAY_BUFFER_SIZE, ReplayBuffer, type ReplayRecord } from "./replay-buffer.js";
 
 export interface OperatorInputDecl {
   path: LeafPath;
@@ -42,9 +43,18 @@ export interface Scene {
   /** Update one or more leaves. Atomic per call. Optional `cause` propagates
    * to subscribers as the resulting Delta.cause (LSDP/1.1 §3.2.3). */
   update(patches: Patch[] | Record<LeafPath, LeafValue>, cause?: Cause): void;
-  /** Subscribe to all patches emitted by this scene. The `cause` argument is
-   * present when the patches were produced via update(..., cause). */
-  onPatches(listener: (patches: Patch[], cause?: Cause) => void): () => void;
+  /** Subscribe to all patches emitted by this scene. The listener receives
+   * the per-scene `seq` (LSDP/1.1 §18.1.1) — the same value across all
+   * concurrent listeners on a given delta. */
+  onPatches(listener: (seq: number, patches: Patch[], cause?: Cause) => void): () => void;
+  /** Current per-scene seq counter (LSDP/1.1 §18.1.1). 1 on a fresh
+   * scene ; increments on every emit. Late-joining subscribers ship
+   * snapshot at this value. */
+  currentSeq(): number;
+  /** Replay records strictly after `sinceSeq` for §18.1 resume.
+   * Returns `covered: false` when sinceSeq is older than the buffer's
+   * earliest entry — the caller MUST fall back to a fresh snapshot. */
+  replaySince(sinceSeq: number): { records: ReplayRecord[]; covered: boolean };
   /**
    * Validate input patches against the declared operator_inputs schema.
    * Returns the first error or null. The reserved `__test.*` namespace is
@@ -58,6 +68,22 @@ export function createScene(init: SceneInit): Scene {
   const operatorInputs = init.operatorInputs ?? [];
   const inputsByPath = new Map<LeafPath, OperatorInputDecl>();
   for (const oi of operatorInputs) inputsByPath.set(oi.path, oi);
+
+  // LSDP/1.1 §18.1.1 — per-scene monotonic seq. Pre-seeded to 1 so the
+  // very first subscriber's snapshot ships at seq=1 (matches every
+  // existing 1.0 conformance scenario). Subsequent emits increment.
+  let seq = 1;
+  const replay = new ReplayBuffer(DEFAULT_REPLAY_BUFFER_SIZE);
+  type SceneListener = (seq: number, patches: Patch[], cause?: Cause) => void;
+  const sceneListeners = new Set<SceneListener>();
+
+  // Bridge LeafStore.onPatches → scene listeners. Single store listener
+  // increments `seq`, records to the buffer, fans out to scene listeners.
+  store.onPatches((patches, cause) => {
+    seq += 1;
+    replay.push({ seq, patches: patches.slice(), cause });
+    for (const l of sceneListeners) l(seq, patches, cause);
+  });
 
   function update(input: Patch[] | Record<LeafPath, LeafValue>, cause?: Cause): void {
     const patches: Patch[] = Array.isArray(input)
@@ -92,7 +118,14 @@ export function createScene(init: SceneInit): Scene {
     store,
     operatorInputs,
     update,
-    onPatches: (listener) => store.onPatches(listener),
+    onPatches: (listener) => {
+      sceneListeners.add(listener);
+      return () => {
+        sceneListeners.delete(listener);
+      };
+    },
+    currentSeq: () => seq,
+    replaySince: (sinceSeq) => replay.since(sinceSeq),
     validateInput,
   };
 }
