@@ -48,9 +48,24 @@ function Node({ node, store }: TreeProps): ReactNode {
     return null;
   }
 
+  // LSDP/1.1 §3.2.2 — a per-leaf transition on the most recent delta
+  // takes precedence over the bundle-level default. Only bound props
+  // can carry a wire transition (a static prop never moves). Snapshots
+  // clear the directive, so the bundle default reapplies after a reset.
+  //
+  // We resolve here in the parent's render (useSignals() above tracks
+  // these reads) rather than inside the primitive's callback — that way
+  // a transition signal change re-renders this Node, which in turn re-
+  // renders the primitive with the new transition prop.
+  const liveTransitions: Record<string, Transition | undefined> = {};
+  if (node.bindings) {
+    for (const [key, path] of Object.entries(node.bindings)) {
+      const ts = store.transitionSignal(scopedPath(scope, path)).value;
+      if (ts !== undefined) liveTransitions[key] = ts;
+    }
+  }
   const transitionFor = (key: string): Transition | undefined => {
-    // Per-binding default declared in the bundle. LSDP/1 does not carry per-
-    // patch transitions on the wire, so this is the only source.
+    if (key in liveTransitions) return liveTransitions[key];
     return node.transitions?.[key];
   };
 

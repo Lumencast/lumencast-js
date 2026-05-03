@@ -1,9 +1,11 @@
 // Local Transition type + Framer Motion translation.
 //
 // LSML 1.0 §6 declares `animate` directives at the primitive level (transition,
-// transform, opacity, filter). Per-patch transitions are NOT a LSDP/1 concept —
-// they would require a protocol extension. For v0.1.0 the runtime supports only
-// scene-level transitions declared in the bundle.
+// transform, opacity, filter). LSDP/1.1 §3.2.2 added per-leaf transition
+// directives on delta patches — incoming deltas can carry a transition hint
+// that overrides the bundle-level default for the next animation cycle.
+// `parseWireTransition` ingests the wire shape ; `Store.lastTransition(path)`
+// surfaces the most-recent directive to the renderer.
 //
 // We deliberately animate only GPU-friendly properties (transform, opacity,
 // filter). Primitives enforce this at the DOM level by exposing those props as
@@ -76,3 +78,39 @@ export function toFramer(t: Transition | undefined): FramerTransition {
     ease: "easeInOut",
   };
 }
+
+/**
+ * Parse a wire-format `TransitionSpec` (LSDP/1.1 §3.2.2) into the
+ * runtime's local Transition type. Returns `undefined` for malformed
+ * input so the caller falls back to whatever bundle-level default
+ * applies. The wire shape uses kebab-case `easing` values
+ * (`linear`, `ease-in`, `ease-out`, `ease-in-out`) which we map to
+ * the runtime's `cubic-*` vocabulary.
+ */
+export function parseWireTransition(value: unknown): Transition | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const v = value as Record<string, unknown>;
+  const kind = v.kind;
+  if (kind === "snap") {
+    return { kind: "none" };
+  }
+  if (kind === "tween") {
+    const duration_ms = typeof v.duration_ms === "number" ? v.duration_ms : 0;
+    const easing = WIRE_EASING_MAP[v.easing as string] ?? "cubic-out";
+    return { kind: "tween", duration_ms, ease: easing };
+  }
+  if (kind === "spring") {
+    const out: SpringTransition = { kind: "spring" };
+    if (typeof v.stiffness === "number") out.stiffness = v.stiffness;
+    if (typeof v.damping === "number") out.damping = v.damping;
+    return out;
+  }
+  return undefined;
+}
+
+const WIRE_EASING_MAP: Record<string, "linear" | "cubic-in" | "cubic-out" | "cubic-in-out"> = {
+  linear: "linear",
+  "ease-in": "cubic-in",
+  "ease-out": "cubic-out",
+  "ease-in-out": "cubic-in-out",
+};
