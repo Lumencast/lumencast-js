@@ -23,6 +23,8 @@ import {
   pong,
   snapshot as snapshotFrame,
   WS_SUBPROTOCOL,
+  WS_SUBPROTOCOL_V1_1,
+  type Cause,
   type ErrorCode,
   type Patch,
   type SceneVersion,
@@ -101,8 +103,12 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   const wss = new WebSocketServer({
     server: httpServer,
     path: wsPath,
-    handleProtocols: (offered: Set<string>) =>
-      offered.has(WS_SUBPROTOCOL) ? WS_SUBPROTOCOL : false,
+    handleProtocols: (offered: Set<string>) => {
+      // LSDP/1.1 preferred, 1.0 fallback. Anything else → reject upgrade.
+      if (offered.has(WS_SUBPROTOCOL_V1_1)) return WS_SUBPROTOCOL_V1_1;
+      if (offered.has(WS_SUBPROTOCOL)) return WS_SUBPROTOCOL;
+      return false;
+    },
   });
 
   const subscribers = new Set<Subscriber>();
@@ -150,11 +156,17 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
         return;
       }
       case "input": {
-        await handleInput(sub, frame.patches);
+        await handleInput(sub, frame.patches, frame.client_msg_id);
         return;
       }
       case "ping": {
-        sendFrame(sub, pong());
+        // LSDP/1.1 §3.5 — echo nonce verbatim in pong (omit if absent).
+        sendFrame(sub, pong(frame.nonce));
+        return;
+      }
+      case "unsubscribe": {
+        // LSDP/1.1 §4.4 — clean teardown. Close WS within 1s, no error frame.
+        sub.ws.close(1000, "unsubscribe");
         return;
       }
     }
@@ -188,13 +200,17 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     // Wire up delta forwarding from the *current* active scene. If the active
     // scene swaps, this subscriber stays bound to the old one and is detached
     // by setActiveScene().
-    sub.unsubscribePatches = activeScene.onPatches((patches) => {
+    sub.unsubscribePatches = activeScene.onPatches((patches, cause) => {
       sub.seq += 1;
-      sendFrame(sub, deltaFrame({ seq: sub.seq, patches }));
+      sendFrame(sub, deltaFrame({ seq: sub.seq, patches, cause }));
     });
   }
 
-  async function handleInput(sub: Subscriber, patches: Patch[]): Promise<void> {
+  async function handleInput(
+    sub: Subscriber,
+    patches: Patch[],
+    clientMsgId?: string,
+  ): Promise<void> {
     if (!sub.decision) {
       sendError(sub, "AUTH_DENIED", "input before subscribe", false);
       return;
@@ -221,7 +237,16 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       });
       return;
     }
-    activeScene.update(patches);
+    // LSDP/1.1 §3.2.3 — derive provenance metadata for the resulting delta.
+    // The `source` is conventionally `<role>:<subject>` ; when client_msg_id
+    // is provided, echo it verbatim into `input_id` for optimistic-UI
+    // correlation (§4.2). Cause is omitted entirely if neither yields data,
+    // so 1.0 wire shape is preserved when no client opts into 1.1.
+    const subject = sub.decision.subject ?? sub.decision.role;
+    const cause: Cause | undefined = clientMsgId
+      ? { source: `${sub.decision.role}:${subject}`, input_id: clientMsgId }
+      : undefined;
+    activeScene.update(patches, cause);
   }
 
   function handleHttp(req: IncomingMessage, res: ServerResponse): void {

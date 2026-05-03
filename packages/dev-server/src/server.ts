@@ -19,6 +19,7 @@ import {
   sceneChanged as sceneChangedFrame,
   snapshot as snapshotFrame,
   WS_SUBPROTOCOL,
+  WS_SUBPROTOCOL_V1_1,
   type LeafValue,
   type Patch,
   type SceneId,
@@ -96,7 +97,10 @@ export async function startDevServer(config: DevServerConfig): Promise<DevServer
   const wss = new WebSocketServer({
     server: httpServer,
     handleProtocols: (offered: Set<string>) => {
-      return offered.has(WS_SUBPROTOCOL) ? WS_SUBPROTOCOL : false;
+      // LSDP/1.1 preferred, 1.0 fallback.
+      if (offered.has(WS_SUBPROTOCOL_V1_1)) return WS_SUBPROTOCOL_V1_1;
+      if (offered.has(WS_SUBPROTOCOL)) return WS_SUBPROTOCOL;
+      return false;
     },
   });
 

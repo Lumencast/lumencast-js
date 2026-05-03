@@ -6,6 +6,7 @@ import { LumencastError } from "./errors.js";
 import { isProtocolErrorCode } from "./errors.js";
 import {
   PROTOCOL_VERSION,
+  type Cause,
   type ClientFrame,
   type DeltaFrame,
   type ErrorFrame,
@@ -15,9 +16,12 @@ import {
   type PingFrame,
   type PongFrame,
   type SceneChangedFrame,
+  type SceneTransition,
   type ServerFrame,
   type SnapshotFrame,
   type SubscribeFrame,
+  type TransitionSpec,
+  type UnsubscribeFrame,
 } from "./types.js";
 
 /** Encode any LSDP frame to its on-wire JSON string. */
@@ -65,6 +69,8 @@ export function decodeClientFrame(raw: string): ClientFrame | null {
       return decodeInput(parsed);
     case "ping":
       return decodePing(parsed);
+    case "unsubscribe":
+      return decodeUnsubscribe(parsed);
     default:
       return null;
   }
@@ -94,18 +100,22 @@ function decodeSnapshot(o: Record<string, unknown>): SnapshotFrame {
 
 function decodeDelta(o: Record<string, unknown>): DeltaFrame {
   requireFields(o, ["seq", "patches"]);
-  return {
+  const frame: DeltaFrame = {
     v: PROTOCOL_VERSION,
     type: "delta",
     seq: assertInt(o["seq"], "delta.seq"),
     patches: assertPatches(o["patches"], "delta.patches"),
     ...optionalTs(o),
   };
+  if (o["cause"] !== undefined) {
+    frame.cause = assertCause(o["cause"], "delta.cause");
+  }
+  return frame;
 }
 
 function decodeSceneChanged(o: Record<string, unknown>): SceneChangedFrame {
   requireFields(o, ["seq", "scene_id", "scene_version"]);
-  return {
+  const frame: SceneChangedFrame = {
     v: PROTOCOL_VERSION,
     type: "scene_changed",
     seq: assertInt(o["seq"], "scene_changed.seq"),
@@ -113,6 +123,13 @@ function decodeSceneChanged(o: Record<string, unknown>): SceneChangedFrame {
     scene_version: assertString(o["scene_version"], "scene_changed.scene_version"),
     ...optionalTs(o),
   };
+  if (typeof o["from_scene_id"] === "string") {
+    frame.from_scene_id = o["from_scene_id"];
+  }
+  if (o["transition"] !== undefined) {
+    frame.transition = assertSceneTransition(o["transition"], "scene_changed.transition");
+  }
+  return frame;
 }
 
 function decodeError(o: Record<string, unknown>): ErrorFrame {
@@ -140,8 +157,12 @@ function decodeError(o: Record<string, unknown>): ErrorFrame {
   return frame;
 }
 
-function decodePong(_o: Record<string, unknown>): PongFrame {
-  return { v: PROTOCOL_VERSION, type: "pong" };
+function decodePong(o: Record<string, unknown>): PongFrame {
+  const frame: PongFrame = { v: PROTOCOL_VERSION, type: "pong" };
+  if (typeof o["nonce"] === "string") {
+    frame.nonce = o["nonce"];
+  }
+  return frame;
 }
 
 function decodeSubscribe(o: Record<string, unknown>): SubscribeFrame {
@@ -157,20 +178,35 @@ function decodeSubscribe(o: Record<string, unknown>): SubscribeFrame {
   if (o["session"] !== undefined && o["session"] !== null) {
     frame.session = assertString(o["session"], "subscribe.session");
   }
+  if (o["since_sequence"] !== undefined) {
+    frame.since_sequence = assertInt(o["since_sequence"], "subscribe.since_sequence");
+  }
   return frame;
 }
 
 function decodeInput(o: Record<string, unknown>): InputFrame {
   requireFields(o, ["patches"]);
-  return {
+  const frame: InputFrame = {
     v: PROTOCOL_VERSION,
     type: "input",
     patches: assertPatches(o["patches"], "input.patches"),
   };
+  if (typeof o["client_msg_id"] === "string") {
+    frame.client_msg_id = o["client_msg_id"];
+  }
+  return frame;
 }
 
-function decodePing(_o: Record<string, unknown>): PingFrame {
-  return { v: PROTOCOL_VERSION, type: "ping" };
+function decodePing(o: Record<string, unknown>): PingFrame {
+  const frame: PingFrame = { v: PROTOCOL_VERSION, type: "ping" };
+  if (typeof o["nonce"] === "string") {
+    frame.nonce = o["nonce"];
+  }
+  return frame;
+}
+
+function decodeUnsubscribe(_o: Record<string, unknown>): UnsubscribeFrame {
+  return { v: PROTOCOL_VERSION, type: "unsubscribe" };
 }
 
 // --- envelope validation ----------------------------------------------------
@@ -233,8 +269,77 @@ function assertPatches(v: unknown, label: string): Patch[] {
       throw protocolError(`${label}[${i}].path must be a string`);
     }
     assertLeafValue(p["value"], `${label}[${i}].value`, p["path"]);
-    return { path: p["path"], value: p["value"] as LeafValue };
+    const patch: Patch = { path: p["path"], value: p["value"] as LeafValue };
+    if (p["transition"] !== undefined) {
+      patch.transition = assertTransitionSpec(p["transition"], `${label}[${i}].transition`);
+    }
+    return patch;
   });
+}
+
+function assertTransitionSpec(v: unknown, label: string): TransitionSpec {
+  if (!isPlainObject(v)) {
+    throw protocolError(`${label} must be an object`);
+  }
+  const kind = v["kind"];
+  if (kind !== "tween" && kind !== "spring" && kind !== "snap") {
+    throw protocolError(`${label}.kind must be one of "tween", "spring", "snap"`);
+  }
+  const spec: TransitionSpec = { kind };
+  if (v["duration_ms"] !== undefined) {
+    spec.duration_ms = assertInt(v["duration_ms"], `${label}.duration_ms`);
+  }
+  if (typeof v["easing"] === "string") {
+    const e = v["easing"];
+    if (e !== "linear" && e !== "ease-in" && e !== "ease-out" && e !== "ease-in-out") {
+      throw protocolError(
+        `${label}.easing must be one of "linear", "ease-in", "ease-out", "ease-in-out"`,
+      );
+    }
+    spec.easing = e;
+  }
+  if (v["stiffness"] !== undefined) {
+    if (typeof v["stiffness"] !== "number") {
+      throw protocolError(`${label}.stiffness must be a number`);
+    }
+    spec.stiffness = v["stiffness"];
+  }
+  if (v["damping"] !== undefined) {
+    if (typeof v["damping"] !== "number") {
+      throw protocolError(`${label}.damping must be a number`);
+    }
+    spec.damping = v["damping"];
+  }
+  return spec;
+}
+
+function assertCause(v: unknown, label: string): Cause {
+  if (!isPlainObject(v)) {
+    throw protocolError(`${label} must be an object`);
+  }
+  const source = v["source"];
+  if (typeof source !== "string") {
+    throw protocolError(`${label}.source must be a string`);
+  }
+  const cause: Cause = { source };
+  if (typeof v["input_id"] === "string") {
+    cause.input_id = v["input_id"];
+  }
+  return cause;
+}
+
+function assertSceneTransition(v: unknown, label: string): SceneTransition {
+  if (!isPlainObject(v)) {
+    throw protocolError(`${label} must be an object`);
+  }
+  if (typeof v["kind"] !== "string") {
+    throw protocolError(`${label}.kind must be a string`);
+  }
+  const t: SceneTransition = { kind: v["kind"] as SceneTransition["kind"] };
+  if (v["duration_ms"] !== undefined) {
+    t.duration_ms = assertInt(v["duration_ms"], `${label}.duration_ms`);
+  }
+  return t;
 }
 
 function assertLeafValue(v: unknown, label: string, path?: string): asserts v is LeafValue {

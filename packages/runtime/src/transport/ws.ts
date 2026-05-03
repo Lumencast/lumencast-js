@@ -16,7 +16,7 @@ import {
   encodeFrame,
   LumencastError,
   SequenceTracker,
-  WS_SUBPROTOCOL,
+  WS_SUBPROTOCOLS,
   input as inputFrame,
   subscribe as subscribeFrame,
   type DeltaFrame,
@@ -176,7 +176,10 @@ export class WsClient {
 
     let socket: WebSocket;
     try {
-      socket = new this.WebSocketCtor(this.url, [WS_SUBPROTOCOL]);
+      // Advertise both 1.1 (preferred) and 1.0 (fallback) ; the server
+      // picks one. Spread to a mutable array — the WebSocket constructor
+      // type expects string[].
+      socket = new this.WebSocketCtor(this.url, [...WS_SUBPROTOCOLS]);
     } catch (err) {
       this.opts.onTransportError?.(
         new TransportError(

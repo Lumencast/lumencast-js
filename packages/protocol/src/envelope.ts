@@ -3,6 +3,7 @@
 
 import {
   PROTOCOL_VERSION,
+  type Cause,
   type DeltaFrame,
   type ErrorCode,
   type ErrorFrame,
@@ -14,10 +15,12 @@ import {
   type PongFrame,
   type SceneChangedFrame,
   type SceneId,
+  type SceneTransition,
   type SceneVersion,
   type SessionId,
   type SnapshotFrame,
   type SubscribeFrame,
+  type UnsubscribeFrame,
 } from "./types.js";
 
 export interface SnapshotInit {
@@ -45,6 +48,8 @@ export interface DeltaInit {
   seq: number;
   patches: Patch[];
   ts?: string;
+  /** LSDP/1.1 §3.2.3 — optional provenance metadata. */
+  cause?: Cause;
 }
 
 export function delta(init: DeltaInit): DeltaFrame {
@@ -58,6 +63,7 @@ export function delta(init: DeltaInit): DeltaFrame {
     patches: init.patches,
   };
   if (init.ts !== undefined) frame.ts = init.ts;
+  if (init.cause !== undefined) frame.cause = init.cause;
   return frame;
 }
 
@@ -66,6 +72,10 @@ export interface SceneChangedInit {
   scene_id: SceneId;
   scene_version: SceneVersion;
   ts?: string;
+  /** LSDP/1.1 §3.3.1 — previously active scene id. */
+  from_scene_id?: SceneId;
+  /** LSDP/1.1 §3.3.1 — show-level scene transition. */
+  transition?: SceneTransition;
 }
 
 export function sceneChanged(init: SceneChangedInit): SceneChangedFrame {
@@ -77,6 +87,8 @@ export function sceneChanged(init: SceneChangedInit): SceneChangedFrame {
     scene_version: init.scene_version,
   };
   if (init.ts !== undefined) frame.ts = init.ts;
+  if (init.from_scene_id !== undefined) frame.from_scene_id = init.from_scene_id;
+  if (init.transition !== undefined) frame.transition = init.transition;
   return frame;
 }
 
@@ -115,14 +127,18 @@ export function errorFrame(init: ErrorInit): ErrorFrame {
   return frame;
 }
 
-export function pong(): PongFrame {
-  return { v: PROTOCOL_VERSION, type: "pong" };
+export function pong(nonce?: string): PongFrame {
+  const frame: PongFrame = { v: PROTOCOL_VERSION, type: "pong" };
+  if (nonce !== undefined) frame.nonce = nonce;
+  return frame;
 }
 
 export interface SubscribeInit {
   token: string;
   scene?: SceneId;
   session?: SessionId;
+  /** LSDP/1.1 §4.1 — incremental resume from a known last-seen seq. */
+  since_sequence?: number;
 }
 
 export function subscribe(init: SubscribeInit): SubscribeFrame {
@@ -133,16 +149,32 @@ export function subscribe(init: SubscribeInit): SubscribeFrame {
   };
   if (init.scene !== undefined) frame.scene = init.scene;
   if (init.session !== undefined) frame.session = init.session;
+  if (init.since_sequence !== undefined) frame.since_sequence = init.since_sequence;
   return frame;
 }
 
-export function input(patches: Patch[]): InputFrame {
+export interface InputInit {
+  patches: Patch[];
+  /** LSDP/1.1 §4.2 — optimistic-UI correlation tag. */
+  client_msg_id?: string;
+}
+
+export function input(patches: Patch[], init?: { client_msg_id?: string }): InputFrame {
   if (patches.length === 0) {
     throw new Error("input.patches must be non-empty");
   }
-  return { v: PROTOCOL_VERSION, type: "input", patches };
+  const frame: InputFrame = { v: PROTOCOL_VERSION, type: "input", patches };
+  if (init?.client_msg_id !== undefined) frame.client_msg_id = init.client_msg_id;
+  return frame;
 }
 
-export function ping(): PingFrame {
-  return { v: PROTOCOL_VERSION, type: "ping" };
+export function ping(nonce?: string): PingFrame {
+  const frame: PingFrame = { v: PROTOCOL_VERSION, type: "ping" };
+  if (nonce !== undefined) frame.nonce = nonce;
+  return frame;
+}
+
+/** LSDP/1.1 §4.4 — clean teardown signal. */
+export function unsubscribe(): UnsubscribeFrame {
+  return { v: PROTOCOL_VERSION, type: "unsubscribe" };
 }
