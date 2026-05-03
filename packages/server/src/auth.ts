@@ -22,6 +22,47 @@ export type Authenticate = (token: string) => Promise<AuthDecision> | AuthDecisi
  */
 export const defaultAuthenticate: Authenticate = () => ({ role: "viewer" });
 
+/**
+ * Mutable token → AuthDecision map for test setups (interop control plane).
+ * NEVER use in production — tokens are kept in process memory and any caller
+ * with reset()/setMany() can rewrite the auth store.
+ */
+export class StaticTokens {
+  private readonly map = new Map<string, AuthDecision>();
+
+  /** Authenticate hook bound to this instance. Pass to `startServer()`. */
+  authenticate: Authenticate = (token: string) => {
+    const d = this.map.get(token);
+    if (!d) {
+      throw new (class extends Error {
+        readonly code = "AUTH_DENIED" as const;
+        readonly recoverable = false;
+      })(`unknown token`);
+    }
+    return d;
+  };
+
+  set(token: string, decision: AuthDecision): void {
+    this.map.set(token, decision);
+  }
+
+  setMany(entries: Iterable<[string, AuthDecision]>): void {
+    for (const [t, d] of entries) this.map.set(t, d);
+  }
+
+  delete(token: string): boolean {
+    return this.map.delete(token);
+  }
+
+  reset(): void {
+    this.map.clear();
+  }
+
+  size(): number {
+    return this.map.size;
+  }
+}
+
 /** Returns true if the role is permitted to write to the given path. */
 export function canWritePath(decision: AuthDecision, path: LeafPath): boolean {
   // Test sessions have their own namespace.

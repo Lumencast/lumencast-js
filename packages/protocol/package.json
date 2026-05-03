@@ -11,7 +11,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./conformance": {
+      "types": "./dist/conformance/index.d.ts",
+      "import": "./dist/conformance/index.js"
+    },
+    "./cli": "./dist/cli.js"
+  },
+  "bin": {
+    "lumencast-js-conformance": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -33,7 +41,12 @@
     "test:watch": "vitest",
     "conformance": "vitest run --config vitest.conformance.config.ts"
   },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "yaml": "^2.6.1"
+  },
   "devDependencies": {
+    "@types/ws": "^8.5.13",
     "vitest": "^4.1.5"
   }
 }

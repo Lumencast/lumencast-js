@@ -28,6 +28,7 @@
     "test:e2e": "pnpm --filter @lumencast/runtime run test:e2e",
     "check:bundle": "pnpm --filter @lumencast/runtime run check:bundle",
     "conformance": "pnpm --filter @lumencast/protocol run conformance",
+    "interop:self-test": "node scripts/interop-self-test.mjs",
     "clean": "pnpm -r exec rm -rf dist coverage .tsbuildinfo *.tsbuildinfo"
   },
   "devDependencies": {

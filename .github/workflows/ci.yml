@@ -144,18 +144,59 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: lumencast-js
+      - uses: actions/checkout@v4
+        with:
+          repository: Lumencast/lumencast-protocol
+          path: lumencast-protocol
+          ref: main
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: lumencast-js/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
-      - run: pnpm install --frozen-lockfile
-      - name: Run conformance harness
+          cache-dependency-path: lumencast-js/pnpm-lock.yaml
+      - working-directory: lumencast-js
+        run: pnpm install --frozen-lockfile
+      - name: Byte-level fixtures round-trip
+        working-directory: lumencast-js
         run: pnpm conformance
-        # The conformance suite in lumencast-protocol/conformance/ ships scenarios
-        # iteratively. Until the first batch is committed, the harness reports OK on
-        # an empty suite — keep this job non-gating but visible.
-        continue-on-error: true
+        env:
+          LUMENCAST_PROTOCOL_REPO: ${{ github.workspace }}/lumencast-protocol
+
+  interop-self-test:
+    name: interop self-test (JS server × JS harness)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lumencast-js
+      - uses: actions/checkout@v4
+        with:
+          repository: Lumencast/lumencast-protocol
+          path: lumencast-protocol
+          ref: main
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: lumencast-js/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: lumencast-js/pnpm-lock.yaml
+      - working-directory: lumencast-js
+        run: pnpm install --frozen-lockfile
+      - working-directory: lumencast-js
+        run: pnpm build
+      - name: Self-test serve-scenario × conformance
+        working-directory: lumencast-js
+        run: pnpm interop:self-test
+        env:
+          LUMENCAST_PROTOCOL_REPO: ${{ github.workspace }}/lumencast-protocol
 
   secret-scan:
     name: secret-scan
