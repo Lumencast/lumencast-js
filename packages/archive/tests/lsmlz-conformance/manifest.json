@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "spec": {
+    "lsmlz": "1"
+  },
+  "cases": [
+    {
+      "id": "minimal-archive-roundtrips",
+      "path": "cases/valid/minimal-archive-roundtrips.yaml",
+      "tag": "required",
+      "covers": ["LSMLZ-1#3.1", "LSMLZ-1#3.2"]
+    },
+    {
+      "id": "debug-prefix-ignored",
+      "path": "cases/valid/debug-prefix-ignored.yaml",
+      "tag": "required",
+      "covers": ["LSMLZ-1#3.3"]
+    },
+    {
+      "id": "missing-bundle-entry-rejected",
+      "path": "cases/invalid/missing-bundle-entry-rejected.yaml",
+      "tag": "required",
+      "covers": ["LSMLZ-1#3.1", "LSMLZ-1#5.4"]
+    },
+    {
+      "id": "nested-archive-rejected",
+      "path": "cases/invalid/nested-archive-rejected.yaml",
+      "tag": "required",
+      "covers": ["LSMLZ-1#3.4", "LSMLZ-1#5.4"]
+    },
+    {
+      "id": "path-traversal-rejected",
+      "path": "cases/invalid/path-traversal-rejected.yaml",
+      "tag": "required",
+      "covers": ["LSMLZ-1#3.4", "LSMLZ-1#5.4"]
+    },
+    {
+      "id": "magic-bytes-detect",
+      "path": "cases/valid/magic-bytes-detect.yaml",
+      "tag": "required",
+      "covers": ["LSMLZ-1#2.4"]
+    }
+  ]
+}

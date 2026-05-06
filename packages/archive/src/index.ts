@@ -11,3 +11,13 @@ export {
   type PackInput,
   type LSMLZErrorCode,
 } from "./archive.js";
+
+export {
+  runCase,
+  runCaseFile,
+  type CaseFile,
+  type CaseInput,
+  type CaseExpect,
+  type SingleCase,
+  type CaseResult,
+} from "./conformance.js";
