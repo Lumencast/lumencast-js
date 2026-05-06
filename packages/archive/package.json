@@ -1,0 +1,50 @@
+{
+  "name": "@lumencast/archive",
+  "version": "0.1.0",
+  "description": "LSMLZ/1 archive packer + unpacker. Read and write the single-file ZIP container that carries an LSML scene bundle plus its content-addressed assets.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "homepage": "https://github.com/Lumencast/lumencast-js/tree/main/packages/archive",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lumencast/lumencast-js.git",
+    "directory": "packages/archive"
+  },
+  "keywords": [
+    "lumencast",
+    "lsml",
+    "lsmlz",
+    "archive"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.5"
+  }
+}
