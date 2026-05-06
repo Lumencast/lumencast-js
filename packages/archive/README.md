@@ -21,9 +21,7 @@ import { writeFileSync } from "node:fs";
 const bytes = packArchive({
   sceneId: "hello",
   canonical: '{"$schema":"...","lsml":"1.1","scene_id":"hello",...}',
-  assets: [
-    { path: "assets/abc.png", bytes: imageBytes },
-  ],
+  assets: [{ path: "assets/abc.png", bytes: imageBytes }],
   // Optional — authoring-tool diagnostics under _debug/, ignored by readers.
   debug: { "trace.json": '{"build":[...]}' },
 });
