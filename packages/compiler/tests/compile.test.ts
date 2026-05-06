@@ -34,10 +34,78 @@ const minimalLsml: LSMLBundle = {
 };
 
 describe("compileBundle", () => {
-  it("rejects non-1.0 LSML", () => {
-    expect(() => compileBundle({ ...minimalLsml, lsml: "2.0" as unknown as "1.0" })).toThrow(
-      /only LSML 1.0/,
-    );
+  it("rejects unsupported LSML versions", () => {
+    expect(() =>
+      compileBundle({ ...minimalLsml, lsml: "2.0" as unknown as "1.0" | "1.1" }),
+    ).toThrow(/version "2\.0" is not supported/);
+  });
+
+  it("accepts LSML 1.1 bundles", () => {
+    const out = compileBundle({ ...minimalLsml, lsml: "1.1" });
+    expect(out.scene_version).toBe(ZERO_HASH);
+    expect(out.root.kind).toBe("stack");
+  });
+
+  it("compiles 1.1 instance primitives", () => {
+    const out = compileBundle({
+      ...minimalLsml,
+      lsml: "1.1",
+      layout: {
+        kind: "instance",
+        scene_id: "scoreboard",
+        scene_version: "sha256:" + "a".repeat(64),
+        size: { w: 800, h: 240 },
+        fit: "contain",
+        params: { team_a: "Alpha" },
+        bindParams: { team_b: "match.opponent" },
+      },
+    });
+    expect(out.root.kind).toBe("instance");
+    expect(out.root.props).toMatchObject({
+      scene_id: "scoreboard",
+      width: 800,
+      height: 240,
+      fit: "contain",
+      params: { team_a: "Alpha" },
+    });
+    expect(out.root.bindings).toMatchObject({ "params.team_b": "match.opponent" });
+  });
+
+  it("forwards 1.1 universal props (visible / opacity / rotation / sizing) to the renderer", () => {
+    const out = compileBundle({
+      ...minimalLsml,
+      lsml: "1.1",
+      layout: {
+        kind: "text",
+        bind: { value: "x" },
+        visible: false,
+        opacity: 0.5,
+        rotation: 45,
+        sizing: { x: "fixed", y: "hug" },
+      },
+    });
+    expect(out.root.props).toMatchObject({
+      visible: false,
+      opacity: 0.5,
+      rotation: 45,
+      sizing: { x: "fixed", y: "hug" },
+    });
+  });
+
+  it("forwards 1.1 bindUniversal entries into the bindings map", () => {
+    const out = compileBundle({
+      ...minimalLsml,
+      lsml: "1.1",
+      layout: {
+        kind: "text",
+        bind: { value: "x" },
+        bindUniversal: { visible: "show.is_live", opacity: "fade.alpha" },
+      },
+    });
+    expect(out.root.bindings).toMatchObject({
+      visible: "show.is_live",
+      opacity: "fade.alpha",
+    });
   });
 
   it("compiles a stack with children", () => {

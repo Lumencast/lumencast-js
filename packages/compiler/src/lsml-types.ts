@@ -1,5 +1,14 @@
-// LSML 1.0 input types — what authors write.
+// LSML 1.0 / 1.1 input types — what authors write.
 // Reference: lumencast-protocol/spec/LSML-1.md
+//
+// 1.1 additions (additive over 1.0) :
+//   - `instance` primitive (§4.9)
+//   - Universal props (`visible` / `sizing` / `opacity` / `rotation`)
+//     on every primitive (§5.4)
+//   - `bindUniversal` field on every primitive
+//   - Multi-fill `fills[]` on `shape` (§4.6 + §4.12)
+//   - Stacked `backgrounds[]` on `frame` (§4.3)
+//   - Bundle-level `$schema`, `profiles[]` (§17.3)
 
 export type LSMLPrimitiveKind =
   | "stack"
@@ -9,7 +18,8 @@ export type LSMLPrimitiveKind =
   | "image"
   | "shape"
   | "media"
-  | "repeat";
+  | "repeat"
+  | "instance";
 
 export interface LSMLBindObject {
   /** Most primitives bind a `value` to a leaf path. */
@@ -44,8 +54,22 @@ export interface LSMLBaseNode {
   id?: string;
   bind?: LSMLBindObject;
   bindStyle?: Record<string, string>;
+  /** 1.1+ — bind universal props to leaf paths. */
+  bindUniversal?: Record<string, string>;
   animate?: LSMLAnimateDirective;
   children?: LSMLNode[];
+  /** 1.1+ — visibility flag (LSML §5.4). Defaults to true. */
+  visible?: boolean;
+  /** 1.1+ — opacity 0..1 (LSML §5.4). Defaults to 1. */
+  opacity?: number;
+  /** 1.1+ — rotation in degrees (LSML §5.4). Defaults to 0. */
+  rotation?: number;
+  /** 1.1+ — per-axis sizing mode (LSML §5.4). */
+  sizing?: { x?: "fixed" | "hug" | "fill"; y?: "fixed" | "hug" | "fill" };
+  /** 1.1+ — universal position relative to parent (LSML §5.4). */
+  position?: { x: number; y: number };
+  /** Open-ended authoring metadata (LSML §17.4). Runtime ignores. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface LSMLStack extends LSMLBaseNode {
@@ -122,6 +146,18 @@ export interface LSMLRepeat extends LSMLBaseNode {
   limit?: number;
 }
 
+/** 1.1+ — `instance` primitive (LSML §4.9). Mounts a sub-scene by id with
+ *  bound parameters. */
+export interface LSMLInstance extends LSMLBaseNode {
+  kind: "instance";
+  scene_id: string;
+  scene_version: string;
+  size?: { w: number; h: number };
+  fit?: "contain" | "cover" | "stretch";
+  params?: Record<string, unknown>;
+  bindParams?: Record<string, string>;
+}
+
 export type LSMLNode =
   | LSMLStack
   | LSMLGrid
@@ -130,7 +166,8 @@ export type LSMLNode =
   | LSMLImage
   | LSMLShape
   | LSMLMedia
-  | LSMLRepeat;
+  | LSMLRepeat
+  | LSMLInstance;
 
 export interface LSMLOperatorInput {
   path: string;
@@ -143,9 +180,13 @@ export interface LSMLOperatorInput {
 }
 
 export interface LSMLBundle {
-  lsml: "1.0";
+  lsml: "1.0" | "1.1";
+  /** 1.1+ — informational schema URL for editor autocomplete (LSML §18.4). */
+  $schema?: string;
   scene_id: string;
   scene_version: string;
+  /** 1.1+ — capability profiles the bundle requires (LSML §17.3). */
+  profiles?: string[];
   layout: LSMLNode;
   operator_inputs?: LSMLOperatorInput[];
   external_adapters?: unknown[];
