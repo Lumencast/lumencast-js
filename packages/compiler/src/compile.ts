@@ -1,4 +1,4 @@
-// LSML 1.0 → flat RenderBundle compiler.
+// LSML 1.0 / 1.1 → flat RenderBundle compiler.
 //
 // LSML lets authors write idiomatic primitives with inline `bind: { value: "path" }`,
 // CSS-style `style.fontSize`, `repeat.template`, `animate` directives. The runtime
@@ -8,6 +8,18 @@
 //
 // This compiler bridges the two formats. It does NOT execute the bundle — it
 // produces a JSON the runtime then renders.
+//
+// Version support :
+//   - 1.0 (LSML-1.md) : the original 9-primitive catalog.
+//   - 1.1 (LSML-1.md §17 / §5.4 / §4.9) : additive over 1.0 — `instance`
+//     primitive, universal props (`visible` / `sizing` / `opacity` /
+//     `rotation`) on every primitive, `bindUniversal` field, multi-fill
+//     `fills[]` on shapes, stacked `backgrounds[]` on frames, profile
+//     declarations, `$schema` field.
+//
+// Unsupported 1.1 features compile to best-effort output (the renderer
+// surfaces `BUNDLE_INCOMPATIBLE` per LSML §15.1 if it can't honour them).
+// Bundles tagged 2.x are rejected — major bumps require explicit support.
 
 import type { RenderBundle, RenderNode } from "@lumencast/runtime";
 import type {
@@ -25,9 +37,13 @@ export interface CompileOptions {
   onWarn?: (message: string) => void;
 }
 
+const SUPPORTED_VERSIONS = new Set(["1.0", "1.1"] as const);
+
 export function compileBundle(lsml: LSMLBundle, options: CompileOptions = {}): RenderBundle {
-  if (lsml.lsml !== "1.0") {
-    throw new Error(`compiler: only LSML 1.0 is supported, got ${lsml.lsml}`);
+  if (!SUPPORTED_VERSIONS.has(lsml.lsml as "1.0" | "1.1")) {
+    throw new Error(
+      `compiler: LSML version "${lsml.lsml}" is not supported (supported: ${[...SUPPORTED_VERSIONS].join(", ")})`,
+    );
   }
   return {
     scene_version: lsml.scene_version,
@@ -133,6 +149,42 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
         props["height"] = node.size.h;
       }
       break;
+
+    case "instance":
+      // 1.1+ — sub-scene mount (LSML §4.9). The runtime resolves
+      // `scene_id` + `scene_version` to a separate bundle and renders
+      // it inline ; the compiler just forwards the reference.
+      props["scene_id"] = node.scene_id;
+      props["scene_version"] = node.scene_version;
+      if (node.size !== undefined) {
+        props["width"] = node.size.w;
+        props["height"] = node.size.h;
+      }
+      if (node.fit !== undefined) props["fit"] = node.fit;
+      if (node.params !== undefined) props["params"] = node.params;
+      if (node.bindParams) {
+        for (const [k, v] of Object.entries(node.bindParams)) {
+          bindings[`params.${k}`] = v;
+        }
+      }
+      break;
+  }
+
+  // Universal props (LSML §5.4 — 1.1+). Forwarded to the renderer when
+  // present on the source node. Defaults are spec-side, not compiler-side
+  // (the runtime applies them per primitive).
+  if (node.visible !== undefined) props["visible"] = node.visible;
+  if (node.opacity !== undefined) props["opacity"] = node.opacity;
+  if (node.rotation !== undefined) props["rotation"] = node.rotation;
+  if (node.sizing !== undefined) props["sizing"] = node.sizing;
+  if (node.position !== undefined && props["x"] === undefined && props["y"] === undefined) {
+    // Frame's case above already sets x/y from `position` ; the universal
+    // §5.4 prop takes effect on every other primitive.
+    props["x"] = node.position.x;
+    props["y"] = node.position.y;
+  }
+  if (node.bindUniversal) {
+    for (const [k, v] of Object.entries(node.bindUniversal)) bindings[k] = v;
   }
 
   const children = node.children?.map((c) => compileNode(c, opts));

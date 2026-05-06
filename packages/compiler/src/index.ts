@@ -16,5 +16,6 @@ export type {
   LSMLShape,
   LSMLMedia,
   LSMLRepeat,
+  LSMLInstance,
   LSMLOperatorInput,
 } from "./lsml-types.js";
