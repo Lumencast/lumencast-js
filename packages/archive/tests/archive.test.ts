@@ -7,7 +7,7 @@ import {
   packArchive,
   unpackArchive,
 } from "../src/index.js";
-import { strFromU8, strToU8 } from "fflate";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 const minimalCanonical = JSON.stringify({
   $schema: "https://lumencast.dev/schema/lsml/1.1/schema.json",
@@ -55,7 +55,6 @@ describe("packArchive / unpackArchive — round-trip", () => {
       assets: [],
     });
     // Re-unzip directly to inspect entry names.
-    const { unzipSync } = require("fflate");
     const entries = unzipSync(bytes);
     expect(Object.keys(entries)).toContain("my-scene.lsml");
   });
@@ -72,7 +71,6 @@ describe("packArchive — debug subtree", () => {
         "trace.json": strToU8('["build-start"]'),
       },
     });
-    const { unzipSync } = require("fflate");
     const entries = unzipSync(bytes);
     expect(Object.keys(entries)).toContain("_debug/raw-source.json");
     expect(Object.keys(entries)).toContain("_debug/trace.json");
@@ -95,7 +93,6 @@ describe("packArchive — debug subtree", () => {
 describe("unpackArchive — error cases", () => {
   it("throws LSMLZ_BUNDLE_MISSING when no .lsml entry is present", () => {
     // Hand-craft an archive with only assets.
-    const { zipSync } = require("fflate");
     const bytes = zipSync({ "assets/foo.png": new Uint8Array([1, 2, 3]) });
     expect(() => unpackArchive(bytes)).toThrowError(
       expect.objectContaining({ code: "LSMLZ_BUNDLE_MISSING" }),
@@ -103,7 +100,6 @@ describe("unpackArchive — error cases", () => {
   });
 
   it("throws LSMLZ_NESTED_ARCHIVE on a nested .zip / .lsmlz", () => {
-    const { zipSync } = require("fflate");
     const bytes = zipSync({
       "hello.lsml": strToU8(minimalCanonical),
       "nested.zip": new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
@@ -114,7 +110,6 @@ describe("unpackArchive — error cases", () => {
   });
 
   it("throws LSMLZ_PATH_TRAVERSAL on a `..` segment", () => {
-    const { zipSync } = require("fflate");
     const bytes = zipSync({
       "hello.lsml": strToU8(minimalCanonical),
       "../etc/evil": new Uint8Array([1]),
