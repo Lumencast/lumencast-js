@@ -1,0 +1,25 @@
+name: magic-bytes-detect
+description: A reader's `isArchive(bytes)` style check returns true for any ZIP container (first 4 bytes `50 4B 03 04`) and false for arbitrary JSON / non-ZIP bytes (§2.4). The check is structural — file extension is hint-only.
+tag: required
+spec_refs:
+  - LSMLZ-1#2.4
+
+cases:
+  - input:
+      hex: "504B03040A0000000000"
+    expect:
+      is_archive: true
+  - input:
+      ascii: '{"lsml":"1.1"}'
+    expect:
+      is_archive: false
+  - input:
+      hex: "504B"
+    expect:
+      is_archive: false
+      reason: "Too short — at least 4 bytes required."
+  - input:
+      hex: ""
+    expect:
+      is_archive: false
+      reason: "Empty input."

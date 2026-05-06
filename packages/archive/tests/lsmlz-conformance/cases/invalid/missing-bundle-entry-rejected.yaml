@@ -1,0 +1,15 @@
+name: missing-bundle-entry-rejected
+description: A ZIP without exactly one `*.lsml` (or `*.lsml.json`) entry at the archive root MUST be rejected with `LSMLZ_BUNDLE_MISSING` (§3.1, §5.4). Hand-crafted archives with only assets and no bundle file are not valid LSMLZ.
+tag: required
+spec_refs:
+  - LSMLZ-1#3.1
+  - LSMLZ-1#5.4
+
+input:
+  entries:
+    "assets/abc123.png":
+      base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII="
+
+expect:
+  reject: true
+  code: LSMLZ_BUNDLE_MISSING

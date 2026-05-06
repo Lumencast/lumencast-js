@@ -1,0 +1,19 @@
+name: minimal-archive-roundtrips
+description: A ZIP with one `<scene_id>.lsml` entry at the root and one `assets/<hash>.<ext>` entry unpacks cleanly. The reader returns the bundle bytes verbatim and the asset entry under its archive-relative path.
+tag: required
+spec_refs:
+  - LSMLZ-1#3.1
+  - LSMLZ-1#3.2
+
+input:
+  entries:
+    "hello-world.lsml": |
+      {"$schema":"https://lumencast.dev/schema/lsml/1.1/schema.json","lsml":"1.1","scene_id":"hello-world","scene_version":"sha256:0000000000000000000000000000000000000000000000000000000000000000","layout":{"kind":"frame","size":{"w":100,"h":100},"children":[]}}
+    "assets/abc123def456.png":
+      base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII="
+
+expect:
+  reject: false
+  bundle_filename: "hello-world.lsml"
+  asset_paths:
+    - "assets/abc123def456.png"

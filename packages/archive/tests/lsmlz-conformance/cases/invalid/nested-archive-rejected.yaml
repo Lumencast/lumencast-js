@@ -1,0 +1,17 @@
+name: nested-archive-rejected
+description: A ZIP entry whose path ends in `.zip`, `.lsmlz`, `.tar.gz`, `.7z`, etc. MUST be rejected with `LSMLZ_NESTED_ARCHIVE` (§3.4). Nested archives are forbidden to limit unzip-bomb expansion and confused-deputy attacks.
+tag: required
+spec_refs:
+  - LSMLZ-1#3.4
+  - LSMLZ-1#5.4
+
+input:
+  entries:
+    "scene.lsml": |
+      {"$schema":"https://lumencast.dev/schema/lsml/1.1/schema.json","lsml":"1.1","scene_id":"scene","scene_version":"sha256:0000000000000000000000000000000000000000000000000000000000000000","layout":{"kind":"frame","size":{"w":100,"h":100},"children":[]}}
+    "nested.zip":
+      hex: "504B0304"
+
+expect:
+  reject: true
+  code: LSMLZ_NESTED_ARCHIVE

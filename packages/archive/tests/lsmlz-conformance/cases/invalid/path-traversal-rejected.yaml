@@ -1,0 +1,29 @@
+name: path-traversal-rejected
+description: A ZIP entry whose path contains `..` segments or starts with a path separator (`/foo`, `C:/foo`) MUST be rejected with `LSMLZ_PATH_TRAVERSAL` (§3.4, §5.4). This prevents writes outside the unzip target directory when an unsafe extractor follows the entry name verbatim.
+tag: required
+spec_refs:
+  - LSMLZ-1#3.4
+  - LSMLZ-1#5.4
+
+cases:
+  - input:
+      entries:
+        "scene.lsml": |
+          {"$schema":"https://lumencast.dev/schema/lsml/1.1/schema.json","lsml":"1.1","scene_id":"scene","scene_version":"sha256:0000000000000000000000000000000000000000000000000000000000000000","layout":{"kind":"frame","size":{"w":100,"h":100},"children":[]}}
+        "../etc/evil":
+          hex: "00"
+    expect:
+      reject: true
+      code: LSMLZ_PATH_TRAVERSAL
+      reason: "Entry path contains a `..` segment."
+
+  - input:
+      entries:
+        "scene.lsml": |
+          {"$schema":"https://lumencast.dev/schema/lsml/1.1/schema.json","lsml":"1.1","scene_id":"scene","scene_version":"sha256:0000000000000000000000000000000000000000000000000000000000000000","layout":{"kind":"frame","size":{"w":100,"h":100},"children":[]}}
+        "/etc/evil":
+          hex: "00"
+    expect:
+      reject: true
+      code: LSMLZ_PATH_TRAVERSAL
+      reason: "Entry path is absolute (leading `/`)."
