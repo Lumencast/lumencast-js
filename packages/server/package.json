@@ -1,6 +1,6 @@
 {
   "name": "@lumencast/server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Node server kit for LSDP/1 — HTTP+WS, scene composition, leaf store, server-side adapters, token-agnostic auth hooks.",
   "license": "Apache-2.0",
   "type": "module",
