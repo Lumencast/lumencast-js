@@ -8,6 +8,7 @@ import { toFramer } from "../../animate/transitions";
 export function Text({ resolved, transitionFor }: PrimitiveProps) {
   const value = resolved.value === undefined ? "" : String(resolved.value);
   const size = (resolved.size as string | number | undefined) ?? "1rem";
+  const font = resolved.font as string | undefined;
   const weight = (resolved.weight as number | undefined) ?? 400;
   const colour = (resolved.colour as string | undefined) ?? "currentColor";
   const align = (resolved.align as string | undefined) ?? "start";
@@ -20,6 +21,9 @@ export function Text({ resolved, transitionFor }: PrimitiveProps) {
       style={{
         display: "inline-block",
         fontSize: size,
+        // `font` carries LSML text.style.fontFamily (spec'd in schema.json).
+        // Omitted => inherit the host/container font.
+        ...(font !== undefined ? { fontFamily: font } : {}),
         fontWeight: weight,
         color: colour,
         textAlign: align as React.CSSProperties["textAlign"],

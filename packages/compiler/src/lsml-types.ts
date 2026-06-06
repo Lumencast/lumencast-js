@@ -101,6 +101,7 @@ export interface LSMLText extends LSMLBaseNode {
   kind: "text";
   style?: {
     fontSize?: number | string;
+    fontFamily?: string;
     fontWeight?: number;
     color?: string;
     textAlign?: "start" | "center" | "end" | "left" | "right";

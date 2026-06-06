@@ -20,14 +20,16 @@ const minimalLsml: LSMLBundle = {
     children: [
       {
         kind: "text",
-        style: { fontSize: 32, color: "#ffffff", fontWeight: 700 },
+        style: { fontSize: 32, fontFamily: "Bebas Neue", color: "#ffffff", fontWeight: 700 },
         bind: { value: "show.title" },
       },
       {
         kind: "frame",
         size: { w: 1920, h: 1080 },
         background: "#000",
-        children: [],
+        children: [
+          { kind: "image", alt: "logo", size: { w: 96, h: 64 }, fit: "contain" },
+        ],
       },
     ],
   },
@@ -121,11 +123,12 @@ describe("compileBundle", () => {
     expect(out.root.children).toHaveLength(2);
   });
 
-  it("maps text style.* to Solar primitive vocab (size/weight/colour)", () => {
+  it("maps text style.* to Solar primitive vocab (size/font/weight/colour)", () => {
     const out = compileBundle(minimalLsml);
     const text = out.root.children?.[0];
     expect(text?.kind).toBe("text");
-    expect(text?.props).toMatchObject({ size: 32, weight: 700, colour: "#ffffff" });
+    // style.fontFamily lowers to `font` (text.tsx reads resolved.font).
+    expect(text?.props).toMatchObject({ size: 32, font: "Bebas Neue", weight: 700, colour: "#ffffff" });
     expect(text?.bindings).toEqual({ value: "show.title" });
   });
 
@@ -134,6 +137,14 @@ describe("compileBundle", () => {
     const frame = out.root.children?.[1];
     expect(frame?.kind).toBe("frame");
     expect(frame?.props).toMatchObject({ width: 1920, height: 1080, background: "#000" });
+  });
+
+  it("maps image size.{w,h} to flat width/height (image.tsx honours them)", () => {
+    const out = compileBundle(minimalLsml);
+    const frame = out.root.children?.[1];
+    const image = frame?.children?.[0];
+    expect(image?.kind).toBe("image");
+    expect(image?.props).toMatchObject({ width: 96, height: 64, fit: "contain", alt: "logo" });
   });
 
   it("compiles a repeat into bindings.items + children:[template]", () => {
