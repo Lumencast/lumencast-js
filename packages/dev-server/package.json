@@ -1,6 +1,6 @@
 {
   "name": "@lumencast/dev-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Mock LSDP/1 server for tests — WS protocol + HTTP bundle serving + /__mock/* control plane.",
   "license": "Apache-2.0",
   "type": "module",
