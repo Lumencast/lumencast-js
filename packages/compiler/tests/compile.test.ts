@@ -27,9 +27,7 @@ const minimalLsml: LSMLBundle = {
         kind: "frame",
         size: { w: 1920, h: 1080 },
         background: "#000",
-        children: [
-          { kind: "image", alt: "logo", size: { w: 96, h: 64 }, fit: "contain" },
-        ],
+        children: [{ kind: "image", alt: "logo", size: { w: 96, h: 64 }, fit: "contain" }],
       },
     ],
   },
@@ -128,7 +126,12 @@ describe("compileBundle", () => {
     const text = out.root.children?.[0];
     expect(text?.kind).toBe("text");
     // style.fontFamily lowers to `font` (text.tsx reads resolved.font).
-    expect(text?.props).toMatchObject({ size: 32, font: "Bebas Neue", weight: 700, colour: "#ffffff" });
+    expect(text?.props).toMatchObject({
+      size: 32,
+      font: "Bebas Neue",
+      weight: 700,
+      colour: "#ffffff",
+    });
     expect(text?.bindings).toEqual({ value: "show.title" });
   });
 
