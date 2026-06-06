@@ -238,6 +238,7 @@ function mapTextStyle(node: LSMLText, props: Record<string, unknown>): void {
   const s = node.style;
   // Solar's Text primitive consumes size/weight/colour (UK), not CSS-style names.
   if (s.fontSize !== undefined) props["size"] = s.fontSize;
+  if (s.fontFamily !== undefined) props["font"] = s.fontFamily;
   if (s.fontWeight !== undefined) props["weight"] = s.fontWeight;
   if (s.color !== undefined) props["colour"] = s.color;
   if (s.textAlign !== undefined) props["align"] = mapTextAlign(s.textAlign);
