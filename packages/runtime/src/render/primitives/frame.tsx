@@ -53,7 +53,12 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
   const play = mountPlay({ opacity, x, y, scale, rotate }, animateInitial);
 
   return (
-    <motion.div style={style} initial={play.initial} animate={play.animate} transition={toFramer(tx)}>
+    <motion.div
+      style={style}
+      initial={play.initial}
+      animate={play.animate}
+      transition={toFramer(tx)}
+    >
       {children}
     </motion.div>
   );
