@@ -79,6 +79,60 @@ export function toFramer(t: Transition | undefined): FramerTransition {
   };
 }
 
+// --- mount-play (LSML 1.1 `animate.from`) ---------------------------
+
+/** Identity (animation-end) value for each framer key an `animate.from`
+ *  may declare. A primitive that doesn't natively animate a given key
+ *  still converges it to this neutral value on mount so the element ends
+ *  up visually correct (e.g. a `from.scale: 0.85` settles at `scale: 1`). */
+const INITIAL_IDENTITY: Record<string, number> = {
+  opacity: 1,
+  scale: 1,
+  rotate: 0,
+  x: 0,
+  y: 0,
+};
+
+export interface MountPlay {
+  initial: Record<string, number | string>;
+  animate: Record<string, number | string>;
+}
+
+/**
+ * Build framer-motion `initial` / `animate` props for a primitive that
+ * may carry an LSML 1.1 `animate.from` initial state.
+ *
+ * `base` is the primitive's own animated target (e.g. `{ opacity }` for
+ * Image/Text/Shape, or `{ opacity, x, y, scale, rotate }` for Frame).
+ * `initial` is the lowered `animate.from` map (or `undefined`).
+ *
+ * When `initial` is absent, this returns `{ initial: base, animate: base }`
+ * — framer mounts at the target and never moves, exactly the prior
+ * no-mount-play behaviour (backward compatible). When `initial` is
+ * present, the element mounts at `initial` and animates to `base`,
+ * augmented with identity convergence for any `from` key the primitive
+ * doesn't already drive — so the mount-play plays out and settles
+ * correctly even on opacity-only primitives.
+ */
+export function mountPlay(
+  base: Record<string, number | string>,
+  initial: Record<string, number | string> | undefined,
+): MountPlay {
+  if (!initial || Object.keys(initial).length === 0) {
+    // No `from` → mount directly at target. Pinning `initial` to the
+    // target (rather than letting framer infer from current style)
+    // preserves the existing "no jump, no mount-play" behaviour.
+    return { initial: base, animate: base };
+  }
+  const animate: Record<string, number | string> = { ...base };
+  for (const key of Object.keys(initial)) {
+    if (!(key in animate)) {
+      animate[key] = INITIAL_IDENTITY[key] ?? 0;
+    }
+  }
+  return { initial, animate };
+}
+
 /**
  * Parse a wire-format `TransitionSpec` (LSDP/1.1 §3.2.2) into the
  * runtime's local Transition type. Returns `undefined` for malformed

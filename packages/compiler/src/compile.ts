@@ -24,6 +24,7 @@
 import type { RenderBundle, RenderNode } from "@lumencast/runtime";
 import type {
   LSMLAnimateDirective,
+  LSMLAnimateState,
   LSMLBundle,
   LSMLNode,
   LSMLRepeat,
@@ -214,8 +215,42 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
         out.transitions = transitions as RenderNode["transitions"];
       }
     }
+
+    // LSML 1.1 §6 `animate.from` → flat framer `initial` map. Lowered
+    // independently of `transition` : an author may declare a `from`
+    // without a `transition` (mount-play with the runtime's default
+    // timing). When no `from` is present, `animate_initial` is omitted
+    // and the prior no-mount-play behaviour is preserved (rétro-compat).
+    if (node.animate.from) {
+      const initial = lowerAnimateState(node.animate.from);
+      if (Object.keys(initial).length > 0) {
+        out.animate_initial = initial;
+      }
+    }
   }
 
+  return out;
+}
+
+/** Lower an `animate.from` (or any LSML animate state) into the flat
+ *  framer-motion key space the runtime primitives consume: `opacity`,
+ *  `scale`, `rotate`, `x`, `y`. A scalar `scale` applies uniformly ; a
+ *  `[sx, sy]` pair is collapsed to `sx` (framer takes a single scale on
+ *  the motion components used here). `translate: [x, y]` → `x` / `y`. */
+function lowerAnimateState(s: LSMLAnimateState): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (typeof s.opacity === "number") out["opacity"] = s.opacity;
+  const t = s.transform;
+  if (t) {
+    if (t.scale !== undefined) {
+      out["scale"] = Array.isArray(t.scale) ? t.scale[0] : t.scale;
+    }
+    if (typeof t.rotate === "number") out["rotate"] = t.rotate;
+    if (t.translate !== undefined) {
+      out["x"] = t.translate[0];
+      out["y"] = t.translate[1];
+    }
+  }
   return out;
 }
 

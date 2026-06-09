@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import type { CSSProperties } from "react";
 import type { PrimitiveProps } from "./index";
-import { toFramer } from "../../animate/transitions";
+import { toFramer, mountPlay } from "../../animate/transitions";
 import { backgroundsToCss, parseFills } from "../fill";
 
 /** Absolute-positioned container with size + transform + opacity.
@@ -13,7 +13,7 @@ import { backgroundsToCss, parseFills } from "../fill";
  *  legacy `background` (single color). The array form supports stacked
  *  fills with linear / radial gradients ; first entry renders on top.
  */
-export function Frame({ resolved, transitionFor, children }: PrimitiveProps) {
+export function Frame({ resolved, transitionFor, animateInitial, children }: PrimitiveProps) {
   const x = numberOr(resolved.x, 0);
   const y = numberOr(resolved.y, 0);
   const width = sizeProp(resolved.width);
@@ -50,18 +50,10 @@ export function Frame({ resolved, transitionFor, children }: PrimitiveProps) {
     style.background = legacyBackground;
   }
 
+  const play = mountPlay({ opacity, x, y, scale, rotate }, animateInitial);
+
   return (
-    <motion.div
-      style={style}
-      animate={{
-        opacity,
-        x,
-        y,
-        scale,
-        rotate,
-      }}
-      transition={toFramer(tx)}
-    >
+    <motion.div style={style} initial={play.initial} animate={play.animate} transition={toFramer(tx)}>
       {children}
     </motion.div>
   );

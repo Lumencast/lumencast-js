@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import type { ReactElement } from "react";
 import type { PrimitiveProps } from "./index";
-import { toFramer } from "../../animate/transitions";
+import { toFramer, mountPlay } from "../../animate/transitions";
 import { parseFills, renderFill } from "../fill";
 
 interface StrokeSpec {
@@ -18,7 +18,7 @@ interface StrokeSpec {
  *  accepted for 1.0 bundles ; when both are present the array form
  *  wins (the spec forbids mixing, but we tolerate to ease migration).
  */
-export function Shape({ resolved, transitionFor }: PrimitiveProps) {
+export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProps) {
   const kind = (resolved.kind as string | undefined) ?? "rect";
   const legacyFill = (resolved.fill as string | undefined) ?? "transparent";
   const legacyStroke = (resolved.stroke as string | undefined) ?? "transparent";
@@ -30,6 +30,7 @@ export function Shape({ resolved, transitionFor }: PrimitiveProps) {
 
   const tx = transitionFor("opacity");
   const transition = toFramer(tx);
+  const play = mountPlay({ opacity }, animateInitial);
 
   // LSML 1.1 §4.6 — `fills[]` is the preferred multi-fill form. Fall
   // back to the singular `fill` for 1.0 bundles.
@@ -110,9 +111,10 @@ export function Shape({ resolved, transitionFor }: PrimitiveProps) {
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      animate={{ opacity }}
+      initial={play.initial}
+      animate={play.animate}
       transition={transition}
-      style={{ willChange: "opacity" }}
+      style={{ willChange: "opacity, transform" }}
     >
       {allDefs.length > 0 && <defs>{allDefs}</defs>}
       {stackedFills.map((ref, i) =>
