@@ -146,6 +146,55 @@ describe("LSML 1.1 §6 animate.from — mount-play", () => {
     expect(initial).toEqual({ opacity: 1 });
   });
 
+  it("BUG #snap: animate_initial WITHOUT per-prop transitions gets the default mount timing, not duration 0", async () => {
+    // v0.3.0 regression : `toFramer(undefined)` → `{duration: 0}` made the
+    // mount-play complete in a single frame (visual snap) whenever no
+    // `transitions[key]` entry resolved for the animated keys — which is
+    // exactly what the real wire served (no per-prop entries).
+    const node: RenderNode = {
+      kind: "image",
+      props: { alt: "logo", width: 200, height: 200 },
+      bindings: { src: "logo.src" },
+      animate_initial: { opacity: 0, scale: 0.85 },
+      // no `transitions` at all
+    };
+    const container = await renderNode(node, { "logo.src": "logo.png" });
+    const img = container.querySelector("img")!;
+    const { initial, animate, transition } = readMotion(img);
+    expect(initial).toEqual({ opacity: 0, scale: 0.85 });
+    expect(animate).toEqual({ opacity: 1, scale: 1 });
+    // The mount-play must tween — never a zero-duration snap.
+    expect(transition).toMatchObject({ type: "tween", duration: 0.4 });
+  });
+
+  it("BUG #snap: a transitions entry on a mount-play key (scale) is honoured even when the primitive does not natively look it up", async () => {
+    const node: RenderNode = {
+      kind: "image",
+      props: { alt: "logo", width: 200, height: 200 },
+      bindings: { src: "logo.src" },
+      animate_initial: { scale: 0.85 },
+      // compiler lowered animate.transform.scale → a `scale` transition ;
+      // Image natively looks up only opacity/src.
+      transitions: { scale: { kind: "tween", duration_ms: 1200, ease: "cubic-out" } },
+    };
+    const container = await renderNode(node, { "logo.src": "logo.png" });
+    const img = container.querySelector("img")!;
+    const { transition } = readMotion(img);
+    expect(transition).toMatchObject({ type: "tween", duration: 1.2 });
+  });
+
+  it("REGRESSION: no animate_initial and no transitions still means no animation (deltas snap)", async () => {
+    const node: RenderNode = {
+      kind: "image",
+      props: { alt: "logo", width: 200, height: 200 },
+      bindings: { src: "logo.src" },
+    };
+    const container = await renderNode(node, { "logo.src": "logo.png" });
+    const img = container.querySelector("img")!;
+    const { transition } = readMotion(img);
+    expect(transition).toMatchObject({ duration: 0 });
+  });
+
   it("REGRESSION: a from with only opacity leaves transform untouched on an opacity primitive", async () => {
     const node: RenderNode = {
       kind: "text",

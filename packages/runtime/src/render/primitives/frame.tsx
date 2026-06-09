@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import type { CSSProperties } from "react";
 import type { PrimitiveProps } from "./index";
-import { toFramer, mountPlay } from "../../animate/transitions";
+import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
 import { backgroundsToCss, parseFills } from "../fill";
 
 /** Absolute-positioned container with size + transform + opacity.
@@ -29,12 +29,11 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
 
   // Pick the most expressive declared transition among the animated
   // bindings (transform / opacity). If none, no animation.
-  const tx =
-    transitionFor("opacity") ??
-    transitionFor("scale") ??
-    transitionFor("rotate") ??
-    transitionFor("x") ??
-    transitionFor("y");
+  const tx = resolveTransition(
+    transitionFor,
+    ["opacity", "scale", "rotate", "x", "y"],
+    animateInitial,
+  );
 
   const style: CSSProperties = {
     position: "absolute",

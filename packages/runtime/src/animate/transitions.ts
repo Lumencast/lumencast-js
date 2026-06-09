@@ -99,6 +99,58 @@ export interface MountPlay {
 }
 
 /**
+ * Default mount-play timing — applies when a node carries an
+ * `animate_initial` (LSML 1.1 `animate.from`) but no per-prop
+ * `transitions` entry resolves for any animated key. The compiler
+ * documents that `from` without an explicit `transition` mount-plays
+ * "with the runtime's default timing" ; before this constant existed the
+ * fallback was `toFramer(undefined)` → `{ duration: 0 }`, which snapped
+ * the element straight to its settled state (the mount-play never
+ * visibly played). 400 ms ease-out matches the runtime's other implicit
+ * timings (crossfade fallback, scene-track fade).
+ */
+export const DEFAULT_MOUNT_PLAY_TRANSITION: Transition = {
+  kind: "tween",
+  duration_ms: 400,
+  ease: "cubic-out",
+};
+
+/**
+ * Resolve the transition a primitive should hand framer-motion.
+ *
+ * `keys` are the primitive's native animated prop keys, scanned in
+ * order (e.g. `["opacity", "src"]` for Image). When the node also
+ * carries an `animate_initial`, the lookup widens to the keys the
+ * mount-play actually moves (`from.scale` may have lowered a `scale`
+ * transition that an opacity-only primitive would otherwise never look
+ * up), and — critically — falls back to
+ * `DEFAULT_MOUNT_PLAY_TRANSITION` instead of "no animation" : a
+ * mount-play must tween, never complete in zero frames.
+ *
+ * Without `animate_initial` the prior behaviour is preserved exactly :
+ * first declared transition among `keys`, else `undefined` (deltas
+ * snap unless a transition is declared).
+ */
+export function resolveTransition(
+  transitionFor: (key: string) => Transition | undefined,
+  keys: string[],
+  animateInitial?: Record<string, number | string>,
+): Transition | undefined {
+  for (const key of keys) {
+    const t = transitionFor(key);
+    if (t !== undefined) return t;
+  }
+  if (animateInitial && Object.keys(animateInitial).length > 0) {
+    for (const key of Object.keys(animateInitial)) {
+      const t = transitionFor(key);
+      if (t !== undefined) return t;
+    }
+    return DEFAULT_MOUNT_PLAY_TRANSITION;
+  }
+  return undefined;
+}
+
+/**
  * Build framer-motion `initial` / `animate` props for a primitive that
  * may carry an LSML 1.1 `animate.from` initial state.
  *

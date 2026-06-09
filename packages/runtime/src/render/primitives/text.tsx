@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import type { PrimitiveProps } from "./index";
-import { toFramer, mountPlay } from "../../animate/transitions";
+import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
 
 /** Text leaf. Value renders as the displayed string ; style props
  *  cover size / weight / colour / alignment. Opacity is animated when
@@ -15,7 +15,7 @@ export function Text({ resolved, transitionFor, animateInitial }: PrimitiveProps
   const align = (resolved.align as string | undefined) ?? "start";
   const opacity = numberOr(resolved.opacity, 1);
 
-  const tx = transitionFor("opacity") ?? transitionFor("value");
+  const tx = resolveTransition(transitionFor, ["opacity", "value"], animateInitial);
   const play = mountPlay({ opacity }, animateInitial);
 
   return (
