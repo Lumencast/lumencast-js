@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import type { PrimitiveProps } from "./index";
-import { toFramer, mountPlay } from "../../animate/transitions";
+import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
 
 /** Image leaf. `src`, `fit` (cover/contain/fill), `position`,
  *  `opacity`. Opacity is animated when a transition is declared. When an
@@ -18,7 +18,7 @@ export function Image({ resolved, transitionFor, animateInitial }: PrimitiveProp
   const width = dimOr(resolved.width, "100%");
   const height = dimOr(resolved.height, "100%");
 
-  const tx = transitionFor("opacity") ?? transitionFor("src");
+  const tx = resolveTransition(transitionFor, ["opacity", "src"], animateInitial);
   const play = mountPlay({ opacity }, animateInitial);
 
   return (

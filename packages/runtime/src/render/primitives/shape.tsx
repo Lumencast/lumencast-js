@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import type { ReactElement } from "react";
 import type { PrimitiveProps } from "./index";
-import { toFramer, mountPlay } from "../../animate/transitions";
+import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
 import { parseFills, renderFill } from "../fill";
 
 interface StrokeSpec {
@@ -28,7 +28,7 @@ export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProp
   const radius = numberOr(resolved.radius, 0);
   const opacity = numberOr(resolved.opacity, 1);
 
-  const tx = transitionFor("opacity");
+  const tx = resolveTransition(transitionFor, ["opacity"], animateInitial);
   const transition = toFramer(tx);
   const play = mountPlay({ opacity }, animateInitial);
 

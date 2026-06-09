@@ -22,7 +22,15 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Local-dev escape hatch : run against a system browser
+        // (`chrome` / `msedge`) when the playwright-managed chromium
+        // download is unavailable. CI leaves this unset.
+        ...(process.env["PW_BROWSER_CHANNEL"]
+          ? { channel: process.env["PW_BROWSER_CHANNEL"] }
+          : {}),
+      },
     },
   ],
   webServer: {
