@@ -1,11 +1,12 @@
 import { motion } from "framer-motion";
 import type { PrimitiveProps } from "./index";
-import { toFramer } from "../../animate/transitions";
+import { toFramer, mountPlay } from "../../animate/transitions";
 
 /** Text leaf. Value renders as the displayed string ; style props
  *  cover size / weight / colour / alignment. Opacity is animated when
- *  a transition is declared on `opacity` or `value`. */
-export function Text({ resolved, transitionFor }: PrimitiveProps) {
+ *  a transition is declared on `opacity` or `value`. An `animate.from`
+ *  makes it mount-play (initial → target) on mount. */
+export function Text({ resolved, transitionFor, animateInitial }: PrimitiveProps) {
   const value = resolved.value === undefined ? "" : String(resolved.value);
   const size = (resolved.size as string | number | undefined) ?? "1rem";
   const font = resolved.font as string | undefined;
@@ -15,6 +16,7 @@ export function Text({ resolved, transitionFor }: PrimitiveProps) {
   const opacity = numberOr(resolved.opacity, 1);
 
   const tx = transitionFor("opacity") ?? transitionFor("value");
+  const play = mountPlay({ opacity }, animateInitial);
 
   return (
     <motion.span
@@ -27,9 +29,10 @@ export function Text({ resolved, transitionFor }: PrimitiveProps) {
         fontWeight: weight,
         color: colour,
         textAlign: align as React.CSSProperties["textAlign"],
-        willChange: "opacity",
+        willChange: "opacity, transform",
       }}
-      animate={{ opacity }}
+      initial={play.initial}
+      animate={play.animate}
       transition={toFramer(tx)}
     >
       {value}

@@ -20,6 +20,12 @@ import { Instance } from "./instance";
 export interface PrimitiveProps {
   resolved: Record<string, unknown>;
   transitionFor: (key: string) => Transition | undefined;
+  /** LSML 1.1 `animate.from` lowered to a flat framer `initial` map
+   *  (keys: `opacity`, `scale`, `rotate`, `x`, `y`). When present, a
+   *  motion primitive passes it as framer-motion `initial={...}` so the
+   *  element mounts in this state and animates to its rendered target on
+   *  mount (mount-play). `undefined` → no `initial` (no mount-play). */
+  animateInitial?: Record<string, number | string>;
   children?: ReactNode;
 }
 

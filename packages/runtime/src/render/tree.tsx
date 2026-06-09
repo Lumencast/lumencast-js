@@ -89,7 +89,11 @@ function Node({ node, store }: TreeProps): ReactNode {
 
   const body = (
     <UniversalWrapper {...universal}>
-      <Primitive resolved={resolved} transitionFor={transitionFor}>
+      <Primitive
+        resolved={resolved}
+        transitionFor={transitionFor}
+        animateInitial={node.animate_initial}
+      >
         {children}
       </Primitive>
     </UniversalWrapper>

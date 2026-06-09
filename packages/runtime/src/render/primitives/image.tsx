@@ -1,10 +1,12 @@
 import { motion } from "framer-motion";
 import type { PrimitiveProps } from "./index";
-import { toFramer } from "../../animate/transitions";
+import { toFramer, mountPlay } from "../../animate/transitions";
 
 /** Image leaf. `src`, `fit` (cover/contain/fill), `position`,
- *  `opacity`. Opacity is animated when a transition is declared. */
-export function Image({ resolved, transitionFor }: PrimitiveProps) {
+ *  `opacity`. Opacity is animated when a transition is declared. When an
+ *  `animate.from` is lowered onto the node, it mounts at that state and
+ *  plays to its target on mount (mount-play). */
+export function Image({ resolved, transitionFor, animateInitial }: PrimitiveProps) {
   const src = resolved.src as string | undefined;
   if (!src) return null;
   const fit = (resolved.fit as string | undefined) ?? "contain";
@@ -17,6 +19,7 @@ export function Image({ resolved, transitionFor }: PrimitiveProps) {
   const height = dimOr(resolved.height, "100%");
 
   const tx = transitionFor("opacity") ?? transitionFor("src");
+  const play = mountPlay({ opacity }, animateInitial);
 
   return (
     <motion.img
@@ -26,9 +29,10 @@ export function Image({ resolved, transitionFor }: PrimitiveProps) {
         objectPosition: position,
         width,
         height,
-        willChange: "opacity",
+        willChange: "opacity, transform",
       }}
-      animate={{ opacity }}
+      initial={play.initial}
+      animate={play.animate}
       transition={toFramer(tx)}
       draggable={false}
     />

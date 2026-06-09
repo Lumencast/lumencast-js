@@ -30,13 +30,11 @@ export interface LSMLBindObject {
   items?: string;
 }
 
-export interface LSMLAnimateDirective {
-  transition?: {
-    duration?: number;
-    easing?: "linear" | "ease-in" | "ease-out" | "ease-in-out" | "spring";
-    stiffness?: number;
-    damping?: number;
-  };
+/** The visual state an `animate` directive can target (and, via `from`,
+ *  start from). `from` carries the same fields ; it is the mount-time
+ *  initial state that makes an authored `animate` play *on mount* without
+ *  any operator delta or KeyframePlayer. */
+export interface LSMLAnimateState {
   transform?: {
     translate?: [number, number];
     scale?: number | [number, number];
@@ -47,6 +45,20 @@ export interface LSMLAnimateDirective {
     blur?: number;
     brightness?: number;
   };
+}
+
+export interface LSMLAnimateDirective extends LSMLAnimateState {
+  transition?: {
+    duration?: number;
+    easing?: "linear" | "ease-in" | "ease-out" | "ease-in-out" | "spring";
+    stiffness?: number;
+    damping?: number;
+  };
+  /** LSML 1.1 — mount-time initial state. When present, the element
+   *  mounts with these values and animates to its declared target
+   *  (`opacity` / `transform` on the directive) on mount. When absent,
+   *  behaviour is unchanged (no mount-play ; rétro-compatible). */
+  from?: LSMLAnimateState;
 }
 
 export interface LSMLBaseNode {

@@ -186,6 +186,62 @@ describe("compileBundle", () => {
     });
   });
 
+  it("lowers animate.from into a flat animate_initial map (mount-play)", () => {
+    const lsml: LSMLBundle = {
+      ...minimalLsml,
+      layout: {
+        kind: "image",
+        alt: "logo",
+        size: { w: 200, h: 200 },
+        animate: {
+          from: { opacity: 0, transform: { scale: 0.85 } },
+          transition: { duration: 550, easing: "ease-out" },
+          opacity: 1,
+          transform: { scale: 1 },
+        },
+      },
+    };
+    const out = compileBundle(lsml);
+    expect(out.root.animate_initial).toEqual({ opacity: 0, scale: 0.85 });
+    // the existing transition lowering is unaffected
+    expect(out.root.transitions).toMatchObject({
+      opacity: { kind: "tween", duration_ms: 550, ease: "cubic-out" },
+      scale: { kind: "tween", duration_ms: 550, ease: "cubic-out" },
+    });
+  });
+
+  it("lowers from.transform.translate and rotate into x/y/rotate", () => {
+    const lsml: LSMLBundle = {
+      ...minimalLsml,
+      layout: {
+        kind: "frame",
+        size: { w: 100, h: 100 },
+        animate: {
+          from: { transform: { translate: [40, -20], rotate: 90 }, opacity: 0 },
+          transition: { duration: 300 },
+          opacity: 1,
+        },
+      },
+    };
+    const out = compileBundle(lsml);
+    expect(out.root.animate_initial).toEqual({ opacity: 0, x: 40, y: -20, rotate: 90 });
+  });
+
+  it("REGRESSION: animate without from emits no animate_initial", () => {
+    const lsml: LSMLBundle = {
+      ...minimalLsml,
+      layout: {
+        kind: "image",
+        alt: "logo",
+        size: { w: 100, h: 100 },
+        animate: { transition: { duration: 200, easing: "ease-out" }, opacity: 1 },
+      },
+    };
+    const out = compileBundle(lsml);
+    expect(out.root.animate_initial).toBeUndefined();
+    expect(out.root.transitions).toMatchObject({ opacity: { kind: "tween" } });
+  });
+
   it("propagates operator_inputs", () => {
     const lsml: LSMLBundle = {
       ...minimalLsml,

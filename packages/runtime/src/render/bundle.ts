@@ -40,6 +40,14 @@ export interface RenderNode {
    *  directives. The runtime applies these as CSS transitions / Framer Motion
    *  configs at render time. */
   transitions?: Record<string, Transition>;
+  /** LSML 1.1 §6 `animate.from` — mount-time initial state, lowered to a
+   *  flat framer-motion `initial` map (keys: `opacity`, `scale`, `rotate`,
+   *  `x`, `y`, `filter`). When present, the rendering primitive passes this
+   *  as framer-motion `initial={...}` so the element mounts in this state
+   *  and animates to its declared target on mount (mount-play). When absent,
+   *  the primitive applies no `initial` and the prior no-mount-play
+   *  behaviour holds (backward compatible). */
+  animate_initial?: Record<string, number | string>;
   /** LSML 1.1 §6.6 — multi-step keyframe sequence played on mount or
    *  whenever `keyframes.key` (LeafPath) changes. Coexists with
    *  `transitions` ; the runtime applies whichever was last triggered
