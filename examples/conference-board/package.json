@@ -1,6 +1,6 @@
 {
   "name": "@lumencast/example-conference-board",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Non-broadcast demo: vote queue + live Q&A counts driven by @lumencast/server.",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@lumencast/runtime-vue",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Headless Vue 3 adapter for Lumencast — live LSDP/1 leaf state as Vue refs.",
   "license": "Apache-2.0",
   "type": "module",
