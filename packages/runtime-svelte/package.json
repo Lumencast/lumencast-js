@@ -1,6 +1,6 @@
 {
   "name": "@lumencast/runtime-svelte",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Headless Svelte adapter for Lumencast — live LSDP/1 leaf state as Svelte stores.",
   "license": "Apache-2.0",
   "type": "module",

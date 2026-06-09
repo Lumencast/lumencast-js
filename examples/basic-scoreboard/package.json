@@ -1,6 +1,6 @@
 {
   "name": "@lumencast/example-basic-scoreboard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Hello-world: mount @lumencast/runtime against @lumencast/dev-server, push two deltas, observe the DOM update.",
   "type": "module",
