@@ -30,8 +30,14 @@
 
 /** RC#10 — hard cap : 8 KiB per subpath `d` string. */
 export const MAX_SUBPATH_LEN = 8192;
-/** RC#10 — hard cap on commands per subpath. */
-export const MAX_SUBPATH_COMMANDS = 4096;
+/**
+ * RC#10 — hard cap on commands per subpath. Aligned on the compiler's
+ * MAX_PATH_COMMANDS = 4000 (PR #39, deliberate authoring cap) so a live
+ * LSDP delta can never carry more commands than the authoring pipeline
+ * accepts. A shared constant module is tracked in issue #41 — do not
+ * diverge these two values in the meantime.
+ */
+export const MAX_SUBPATH_COMMANDS = 4000;
 /** RC#10 — hard cap on subpaths per shape. */
 export const MAX_SUBPATHS = 64;
 
@@ -99,10 +105,17 @@ export function validatePathData(value: unknown): string | null {
     }
     if (i < n && d[i] === ".") {
       i++;
+      let fracDigits = 0;
       while (i < n && isDigit(d.charCodeAt(i))) {
         i++;
-        digits++;
+        fracDigits++;
       }
+      // A token ending in a bare "." (empty decimal part, e.g. "1.")
+      // must not be immediately followed by another "." — "1..2" is not
+      // valid SVG path data and would otherwise be mis-scanned as the
+      // two tokens "1." + ".2" (Probe bug report, issue #30).
+      if (fracDigits === 0 && i < n && d[i] === ".") return null;
+      digits += fracDigits;
     }
     if (digits === 0) return null; // bare sign / dot / forbidden char
     if (i < n && (d[i] === "e" || d[i] === "E")) {

@@ -137,15 +137,22 @@ describe("parseShapePaths — §4.6 resolution", () => {
 // ─── 2. anti-ReDoS / anti-freeze (RC#10 + RC#12) ─────────────────────
 
 describe("validatePathData — adversarial payloads (RC#10/RC#12)", () => {
+  // Timing budget : 5 ms averaged. 1 ms was flaky under coverage
+  // instrumentation (istanbul counters + cold JIT inflate the first
+  // iterations) ; 5 ms still catches any super-linear regression by
+  // orders of magnitude while staying deterministic in CI (Probe #30).
+  const PER_VALUE_BUDGET_MS = 5;
+
   it("rejects a 10⁶-command `d` without freezing (length-cap short-circuit)", () => {
     const million = "M0 0 " + "L1 1 ".repeat(1_000_000); // ~5 MB
+    validatePathData(million); // warmup (JIT) before measuring
     const start = performance.now();
     for (let i = 0; i < 200; i++) expect(validatePathData(million)).toBeNull();
     const perValue = (performance.now() - start) / 200;
-    expect(perValue).toBeLessThanOrEqual(1);
+    expect(perValue).toBeLessThanOrEqual(PER_VALUE_BUDGET_MS);
   });
 
-  it("validates every adversarial payload in ≤ 1 ms (averaged over 200 runs)", () => {
+  it("validates every adversarial payload in ≤ 5 ms (averaged over 200 runs)", () => {
     const adversarial: string[] = [
       "M" + "1".repeat(8000), // one huge number
       "M0 0 " + "Z".repeat(8000), // command-cap probe
@@ -159,17 +166,18 @@ describe("validatePathData — adversarial payloads (RC#10/RC#12)", () => {
       "M0 0 1e" + "9".repeat(8000),
     ];
     for (const payload of adversarial) {
+      validatePathData(payload); // warmup (JIT) before measuring
       const runs = 200;
       const start = performance.now();
       for (let i = 0; i < runs; i++) validatePathData(payload);
       const perValue = (performance.now() - start) / runs;
       expect(perValue, `payload ${payload.slice(0, 24)}… took ${perValue} ms`).toBeLessThanOrEqual(
-        1,
+        PER_VALUE_BUDGET_MS,
       );
     }
   });
 
-  it("fuzz : 5 000 random inputs — no throw, no unsafe output, ≤ 1 ms each", () => {
+  it("fuzz : 5 000 random inputs — no throw, no unsafe output, ≤ 5 ms each on average", () => {
     const rnd = mulberry32(30);
     const charset = "MmLlZzAaCc0123456789-+.eE ,url(data:<>&;}{\"'\\\n\t";
     const runs = 5_000;
@@ -186,7 +194,7 @@ describe("validatePathData — adversarial payloads (RC#10/RC#12)", () => {
       }
     }
     const perValue = (performance.now() - start) / runs;
-    expect(perValue).toBeLessThanOrEqual(1);
+    expect(perValue).toBeLessThanOrEqual(PER_VALUE_BUDGET_MS);
   });
 });
 

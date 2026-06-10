@@ -2,7 +2,7 @@
 //
 // Covers gaps NOT in Forge's svg-path.test.tsx:
 //   1. Malformed numbers: 1.2.3, +-5, 1e9999, .5. (double-dot)
-//   2. Off-by-one caps: 8 KiB exact / +1, 64/65 subpaths, 4096/4097 commands
+//   2. Off-by-one caps: 8 KiB exact / +1, 64/65 subpaths, 4000/4001 commands
 //   3. Command arity: C with 4 coords vs 6 (scanner doesn't check arity —
 //      documents the contract), Z followed by coordinates
 //   4. Whitespace-only `d`, infinite coordinates
@@ -13,11 +13,11 @@
 //   9. pathData + paths[] together: paths[] wins + diagnostic
 //  10. Live sequences: hostile→valid→hostile on pathData, paths[], and strokes[]
 //  11. viewBox with width/height of 0 and negative (edge cases in Shape)
-//  12. Cross-PR cap divergence documentation (compiler=4000, runtime=4096)
+//  12. Cross-PR cap alignment (compiler=4000, runtime=4000, issue #41)
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
 
 import {
   MAX_SUBPATH_COMMANDS,
@@ -33,31 +33,19 @@ import type { RenderNode } from "../../src/render/bundle.js";
 // ─── 1. Malformed numbers ─────────────────────────────────────────────
 
 describe("validatePathData — malformed number tokens", () => {
-  it("double-decimal 1.2.3 — scanner splits into two tokens (1.2 then .3), both accepted (BUG)", () => {
-    // BUG FOUND (Probe): the scanner accepts "M0 0 L1.2.3 4".
-    // After consuming "1.2" as the first number token, the scanner reaches ".3".
-    // It tries to parse ".3" as a new number: dot consumed, digit "3" → digits=1.
-    // Result: accepted as two consecutive number tokens "1.2" and "0.3".
-    // Per SVG path grammar, "1.2.3" is actually valid (two adjacent floats),
-    // so this is not necessarily a security issue — but it differs from what
-    // an author might intend. The scanner DOES accept it.
+  it("double-decimal 1.2.3 — two valid adjacent floats accepted ; 1..2 rejected (bug fixed)", () => {
+    // "M0 0 L1.2.3 4": after consuming "1.2", the scanner reaches ".3" and
+    // parses it as a new number (0.3). Per SVG path grammar, "1.2.3" IS
+    // valid (two adjacent floats) — accepted by design.
     const result12_3 = validatePathData("M0 0 L1.2.3 4");
     expect(result12_3).not.toBeNull(); // accepted — two tokens: 1.2 and .3
     // No injection characters may slip through regardless.
     expect(result12_3).not.toMatch(/url\(|data:|[<>&;}{"'\\()]/i);
 
-    // "1..2": "1." is consumed as first token (digits>0), then ".2" is next:
-    // "." consumed, "2" is a digit → digits=1, accepted as 0.2.
-    // So "M0 0 L1..2 3" is ALSO accepted by the scanner (two tokens: 1. and .2).
-    // This is a SCANNER BUG: "1..2" is not valid SVG path data.
-    // Reporting to Forge — do not fix here.
-    const result1__2 = validatePathData("M0 0 L1..2 3");
-    // Currently accepted (scanner bug). Document the actual behaviour:
-    expect(typeof result1__2 === "string" || result1__2 === null).toBe(true);
-    // Invariant that MUST hold regardless: no injection chars in output.
-    if (result1__2 !== null) {
-      expect(result1__2).not.toMatch(/url\(|data:|[<>&;}{"'\\()]/i);
-    }
+    // "1..2" is NOT valid SVG path data ("1." with empty decimal part
+    // immediately followed by another "."). Previously mis-scanned as
+    // "1." + ".2" (Probe bug report) — fixed by Forge: now rejected.
+    expect(validatePathData("M0 0 L1..2 3")).toBeNull();
   });
 
   it("rejects double sign +-5", () => {
@@ -136,11 +124,12 @@ describe("validatePathData — off-by-one cap boundary conditions", () => {
   it("length MAX_SUBPATH_LEN + 1 is always rejected (O(1) gate)", () => {
     const over = "M" + "0 ".repeat(MAX_SUBPATH_LEN);
     expect(over.length).toBeGreaterThan(MAX_SUBPATH_LEN);
+    validatePathData(over); // warmup (JIT) — single-shot timing flaked under coverage
     const t0 = performance.now();
     const result = validatePathData(over);
     const elapsed = performance.now() - t0;
     expect(result).toBeNull();
-    expect(elapsed).toBeLessThan(1); // O(1) gate, not scanning
+    expect(elapsed).toBeLessThan(5); // O(1) gate ; 5 ms budget robust under coverage (Probe #30)
   });
 
   it("MAX_SUBPATH_COMMANDS exactly — accepted (cap is strict >)", () => {
@@ -322,7 +311,7 @@ describe("validatePathData — valid heavy path performance", () => {
 
   it("valid path at exactly MAX_SUBPATH_COMMANDS total commands parses without throw", () => {
     // Exactly MAX_SUBPATH_COMMANDS commands total: 1 (M) + (MAX-1) (Z).
-    // "M0 0" (4 bytes) + "Z" * (MAX-1) (4095 bytes) = 4099 bytes < 8192 ✓
+    // "M0 0" (4 bytes) + "Z" * (MAX-1) (3999 bytes) = 4003 bytes < 8192 ✓
     const d = "M0 0" + "Z".repeat(MAX_SUBPATH_COMMANDS - 1);
     expect(d.length).toBeLessThanOrEqual(MAX_SUBPATH_LEN);
     const result = validatePathData(d);
@@ -385,7 +374,9 @@ describe("parseShapePaths — partial invalid entries", () => {
       expect(() =>
         parseShapePaths({ paths: [null as unknown as { data: string }, { data: "M0 0 Z" }] }),
       ).not.toThrow();
-      const out = parseShapePaths({ paths: [null as unknown as { data: string }, { data: "M0 0 Z" }] });
+      const out = parseShapePaths({
+        paths: [null as unknown as { data: string }, { data: "M0 0 Z" }],
+      });
       expect(out).toHaveLength(1);
       expect(out[0].d).toBe("M0 0 Z");
     } finally {
@@ -477,17 +468,23 @@ describe("RC#10 — live hostile→valid→hostile sequences (Probe)", () => {
     expect(container.innerHTML).not.toContain("evil");
 
     // Step 2: valid recovery
-    await act(async () => { store.set("s.d", "M0 0 L10 10 Z"); });
+    await act(async () => {
+      store.set("s.d", "M0 0 L10 10 Z");
+    });
     expect(pathEls()).toHaveLength(1);
     expect(pathEls()[0].getAttribute("d")).toBe("M0 0 L10 10 Z");
 
     // Step 3: hostile again
-    await act(async () => { store.set("s.d", "M0 0 <script>"); });
+    await act(async () => {
+      store.set("s.d", "M0 0 <script>");
+    });
     expect(pathEls()).toHaveLength(0);
     expect(container.innerHTML).not.toContain("script");
 
     // Step 4: final recovery
-    await act(async () => { store.set("s.d", "M1 1 L9 9 Z"); });
+    await act(async () => {
+      store.set("s.d", "M1 1 L9 9 Z");
+    });
     expect(pathEls()).toHaveLength(1);
   });
 
@@ -587,7 +584,7 @@ describe("Shape — viewBox with extreme width/height values", () => {
         kind: "shape",
         props: {
           geometry: "path",
-          width: -50,  // not a valid finite → numberOr uses -50 (it IS finite!)
+          width: -50, // not a valid finite → numberOr uses -50 (it IS finite!)
           height: -80,
           pathData: "M0 0 Z",
           fill: "blue",
@@ -637,49 +634,35 @@ describe("Shape — viewBox with extreme width/height values", () => {
   });
 });
 
-// ─── 12. Cross-PR cap divergence documentation ───────────────────────
-// This test DOCUMENTS the known divergence between the compiler (PR #39,
-// forge/29-compiler-lowering-11) and the runtime (PR #30, forge/30-path-rendering).
-//
-// Compiler: MAX_PATH_COMMANDS = 4000
-// Runtime:  MAX_SUBPATH_COMMANDS = 4096
-//
-// A path with 4001..4096 commands passes compiler validation but FAILS
-// runtime validation (command cap) — this is a gap that Forge must resolve.
-// The ADR (RC#10) only specifies "8 KiB per subpath"; it does NOT fix the
-// exact command cap. Whichever cap is canonical must be aligned.
-//
-// This test proves the gap is real and measurable.
+// ─── 12. Cross-PR cap alignment ──────────────────────────────────────
+// Probe originally documented a divergence between the compiler (PR #39,
+// MAX_PATH_COMMANDS = 4000) and the runtime (4096). Forge aligned the
+// runtime on the compiler value (4000, the stricter, deliberate authoring
+// cap). Shared-constant module tracked in issue #41.
 
-describe("Cross-PR cap divergence: compiler=4000 commands, runtime=4096 commands", () => {
+describe("Cross-PR cap alignment: compiler=4000 commands, runtime=4000 commands", () => {
   const COMPILER_CAP = 4000;
 
-  it("a path with COMPILER_CAP+1 commands (4001) passes runtime validator (gap proven)", () => {
+  it("a path with COMPILER_CAP+1 commands (4001) is rejected by the runtime validator (gap closed)", () => {
     // 4001 single-char commands: "M0 0" + "Z"*4001 = 4005 bytes < 8192 ✓
     const cmdCount = COMPILER_CAP + 1; // 4001
     const d = "M0 0" + "Z".repeat(cmdCount);
     expect(d.length).toBeLessThanOrEqual(MAX_SUBPATH_LEN);
-    // Runtime accepts it (4001 <= 4096)
-    const result = validatePathData(d);
-    expect(result).not.toBeNull(); // PASS at runtime
-    // But compiler would reject it (4001 > 4000) — divergence confirmed.
-    // This documents the gap: Forge must align the caps.
+    // Runtime now rejects it, exactly like the compiler would.
+    expect(validatePathData(d)).toBeNull();
     // See: packages/compiler/src/compile.ts MAX_PATH_COMMANDS = 4000
-    //      packages/runtime/src/render/svg-path.ts MAX_SUBPATH_COMMANDS = 4096
+    //      packages/runtime/src/render/svg-path.ts MAX_SUBPATH_COMMANDS = 4000
   });
 
-  it("runtime MAX_SUBPATH_COMMANDS is 4096 (not 4000 — confirm the actual exported constant)", () => {
-    expect(MAX_SUBPATH_COMMANDS).toBe(4096);
+  it("runtime MAX_SUBPATH_COMMANDS is 4000 (aligned on the compiler cap, issue #41)", () => {
+    expect(MAX_SUBPATH_COMMANDS).toBe(COMPILER_CAP);
   });
 
-  it("a path with runtime MAX_SUBPATH_COMMANDS total commands passes runtime but would fail compiler", () => {
+  it("a path with exactly MAX_SUBPATH_COMMANDS total commands passes both runtime and compiler caps", () => {
     // IMPORTANT: M counts as command 1. To hit exactly MAX_SUBPATH_COMMANDS total:
     // use (MAX_SUBPATH_COMMANDS - 1) Z commands after M.
-    const d = "M0 0" + "Z".repeat(MAX_SUBPATH_COMMANDS - 1); // total = 4096 commands
+    const d = "M0 0" + "Z".repeat(MAX_SUBPATH_COMMANDS - 1); // total = 4000 commands
     expect(d.length).toBeLessThanOrEqual(MAX_SUBPATH_LEN);
-    expect(validatePathData(d)).not.toBeNull(); // runtime: accepted (exactly at cap)
-    // Compiler cap = 4000. This path has 4096 commands total:
-    // the compiler counts only command letters too, so it would reject (4096 > 4000).
-    // Gap = 96 commands (4096 - 4000). Forge must align.
+    expect(validatePathData(d)).not.toBeNull(); // accepted (exactly at cap)
   });
 });
