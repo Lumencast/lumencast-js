@@ -71,27 +71,32 @@ export function resolveScalarTargets(
 ): Partial<Record<ScalarChannel, number>> | null {
   switch (key) {
     case "opacity": {
-      if (!isFiniteNumber(raw)) return null;
-      return { opacity: raw < 0 ? 0 : raw > 1 ? 1 : raw };
+      const v = toFiniteScalar(raw);
+      if (v === null) return null;
+      return { opacity: v < 0 ? 0 : v > 1 ? 1 : v };
     }
     case "transform.translate": {
       if (!Array.isArray(raw) || raw.length !== 2) return null;
-      const [tx, ty] = raw;
-      if (!isFiniteNumber(tx) || !isFiniteNumber(ty)) return null;
+      const tx = toFiniteScalar(raw[0]);
+      const ty = toFiniteScalar(raw[1]);
+      if (tx === null || ty === null) return null;
       return { x: tx, y: ty };
     }
     case "transform.scale": {
-      if (isFiniteNumber(raw)) return { scaleX: raw, scaleY: raw };
+      const s = toFiniteScalar(raw);
+      if (s !== null) return { scaleX: s, scaleY: s };
       if (Array.isArray(raw) && raw.length === 2) {
-        const [sx, sy] = raw;
-        if (!isFiniteNumber(sx) || !isFiniteNumber(sy)) return null;
+        const sx = toFiniteScalar(raw[0]);
+        const sy = toFiniteScalar(raw[1]);
+        if (sx === null || sy === null) return null;
         return { scaleX: sx, scaleY: sy };
       }
       return null;
     }
     case "transform.rotate": {
-      if (!isFiniteNumber(raw)) return null;
-      return { rotate: raw };
+      const v = toFiniteScalar(raw);
+      if (v === null) return null;
+      return { rotate: v };
     }
     case "filter.blur": {
       const v = clampFilterChannel("blur", raw);
@@ -106,8 +111,25 @@ export function resolveScalarTargets(
   }
 }
 
-function isFiniteNumber(v: unknown): v is number {
-  return typeof v === "number" && Number.isFinite(v);
+// ── IEEE-754 `-0` policy (R8 / PR #39 coherence, issue #33) ───────────
+// `-0 < 0` is FALSE, so a plain sign clamp lets -0 through. Uniform
+// rule : no -0 ever reaches a motion value or a style. Per channel :
+//   · opacity — the negative case CLAMPS to 0 (`-5 → 0`), so -0 follows
+//     the same line and normalises to +0 (rejecting -0 while clamping
+//     -5 would be incoherent within the channel) ;
+//   · translate / scale / rotate — negatives are valid values and
+//     `-0 == 0` is mathematically neutral, so -0 normalises to +0 (a
+//     producer computing `-x` at x = 0 must not be rejected into a
+//     stale last-good) ;
+//   · filter.blur / filter.brightness — REJECTED (null → last-good) by
+//     `clampFilterChannel` : the R8 gate treats any negative sign,
+//     including -0, as hostile input (compiler mirror, issues #39/#41
+//     — do not relax here).
+/** Finite-number gate + `-0 → +0` normalisation for the generic scalar
+ *  channels (filter channels go through `clampFilterChannel` instead). */
+function toFiniteScalar(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  return Object.is(v, -0) ? 0 : v;
 }
 
 /** Default retarget transition when neither a per-leaf wire directive

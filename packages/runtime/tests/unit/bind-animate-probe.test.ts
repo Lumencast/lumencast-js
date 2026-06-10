@@ -176,20 +176,31 @@ describe("resolveScalarTargets — hostile-value completeness (probe)", () => {
     expect(resolveScalarTargets("opacity", 1)).toEqual({ opacity: 1 });
   });
 
-  // BUG (signal to Forge): opacity clamp uses `raw < 0` which is false for -0 in
-  // IEEE-754. The filter channels avoid this via Object.is(-0, -0) in
-  // clampFilterChannel, but opacity has no equivalent guard. -0 slips through and
-  // is forwarded to framer as -0. This is inconsistent with the R8 -0 policy
-  // documented in PR #39 and should be fixed with Object.is(raw, -0) in the
-  // opacity branch of resolveScalarTargets (bind-animate.tsx:75).
-  it("BUG: opacity -0 slips through the clamp as -0 (should be 0, inconsistent with R8/PR#39)", () => {
+  // FIXED (Probe-found bug, closed by Forge): `raw < 0` is false for IEEE-754
+  // -0, so -0 used to slip through the opacity clamp and reach framer as -0.
+  // Policy (documented in resolveScalarTargets / toFiniteScalar) : on the
+  // generic scalar channels -0 NORMALISES to +0 — opacity's negative case is
+  // a clamp to 0 (`-5 → 0`), so -0 follows the same line ; filter channels
+  // keep the R8 rejection (#39/#41). No -0 ever reaches a motion value.
+  it("opacity -0 normalises to +0 (no -0 passthrough — R8/PR#39 coherence)", () => {
     const result = resolveScalarTargets("opacity", -0);
-    // This assertion documents the current (broken) behaviour.
-    // It PASSES today only because -0 leaks through. Once Forge fixes the bug
-    // (Object.is gate on opacity), this will need updating to { opacity: 0 }.
-    expect(result).not.toBeNull();
-    // The channel value is -0, not +0 — prove the leak:
-    expect(Object.is(result!.opacity, -0)).toBe(true);
+    expect(result).toEqual({ opacity: 0 });
+    // Prove the leak is closed: the channel value is +0, not -0.
+    expect(Object.is(result!.opacity, -0)).toBe(false);
+    expect(Object.is(result!.opacity, 0)).toBe(true);
+  });
+
+  it("translate/scale/rotate: -0 components normalise to +0 (mathematically neutral)", () => {
+    const t = resolveScalarTargets("transform.translate", [-0, -0])!;
+    expect(Object.is(t.x, 0)).toBe(true);
+    expect(Object.is(t.y, 0)).toBe(true);
+    const s = resolveScalarTargets("transform.scale", -0)!;
+    expect(Object.is(s.scaleX, 0)).toBe(true);
+    expect(Object.is(s.scaleY, 0)).toBe(true);
+    const sp = resolveScalarTargets("transform.scale", [-0, 1])!;
+    expect(Object.is(sp.scaleX, 0)).toBe(true);
+    const r = resolveScalarTargets("transform.rotate", -0)!;
+    expect(Object.is(r.rotate, 0)).toBe(true);
   });
 
   it("transform.rotate: NaN, Infinity, string, null → null", () => {
@@ -441,11 +452,7 @@ describe("coalescer throughput — 100 bindings × 1000 pushes (probe perf unit)
   it("mixed scalar + colour pushes: colour values coalesce just like scalars", () => {
     const raf = manualRaf();
     const lastValues = new Map<string, unknown>();
-    const c = createFrameCoalescer(
-      (k, v) => lastValues.set(k, v),
-      raf.schedule,
-      raf.cancel,
-    );
+    const c = createFrameCoalescer((k, v) => lastValues.set(k, v), raf.schedule, raf.cancel);
 
     // 10 scalar + 1 colour key
     for (let i = 0; i < 500; i++) {
