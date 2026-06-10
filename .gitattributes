@@ -1,0 +1,37 @@
+# Normalize line endings: treat everything Git detects as text with LF in the
+# repo, regardless of the contributor's OS. Prevents the CRLF/LF churn that
+# Windows agents hit against prettier's `endOfLine: lf`.
+* text=auto eol=lf
+
+# Force text treatment for source/test/config so a stray NUL byte (e.g. from a
+# PowerShell-authored fixture) never makes Git misclassify a file as binary.
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.cjs  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.svg  text eol=lf
+
+# Binary assets: never normalize or diff as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.pdf   binary
+*.mp4   binary
+*.webm  binary
+*.zip   binary
+*.gz    binary
