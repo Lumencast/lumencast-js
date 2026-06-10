@@ -123,7 +123,9 @@ describe("A — KIND_NODE_KEYS exhaustiveness : no spurious warn on full spec'd 
     const { diagnostics } = collect(
       bundle({ kind: "grid", id: "g2", columns: 3, autoFlow: "row" } as unknown as LSMLNode),
     );
-    expect(diagnostics).toContainEqual(expect.objectContaining({ nodeId: "g2", field: "autoFlow" }));
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({ nodeId: "g2", field: "autoFlow" }),
+    );
   });
 
   it("frame: all consumed keys → silent", () => {
@@ -210,7 +212,13 @@ describe("A — KIND_NODE_KEYS exhaustiveness : no spurious warn on full spec'd 
 
   it("image: unknown key 'loading' warns", () => {
     const { diagnostics } = collect(
-      bundle({ kind: "image", id: "img2", alt: "x", size: { w: 1, h: 1 }, loading: "lazy" } as unknown as LSMLNode),
+      bundle({
+        kind: "image",
+        id: "img2",
+        alt: "x",
+        size: { w: 1, h: 1 },
+        loading: "lazy",
+      } as unknown as LSMLNode),
     );
     expect(diagnostics).toContainEqual(
       expect.objectContaining({ nodeId: "img2", field: "loading" }),
@@ -243,9 +251,7 @@ describe("A — KIND_NODE_KEYS exhaustiveness : no spurious warn on full spec'd 
     const { diagnostics } = collect(
       bundle({ kind: "shape", id: "sh2", geometry: "rect", shadow: true } as unknown as LSMLNode),
     );
-    expect(diagnostics).toContainEqual(
-      expect.objectContaining({ nodeId: "sh2", field: "shadow" }),
-    );
+    expect(diagnostics).toContainEqual(expect.objectContaining({ nodeId: "sh2", field: "shadow" }));
   });
 
   it("media: all consumed keys → silent", () => {
@@ -381,10 +387,7 @@ describe("B — strict-throw R9 : Error.message contains node+field, not value",
 
   it("bundle-level key: error names <bundle>+field but not the sentinel", () => {
     try {
-      compileBundle(
-        bundle({ kind: "frame" }, { defaults: { key: SENTINEL } }),
-        { strict: true },
-      );
+      compileBundle(bundle({ kind: "frame" }, { defaults: { key: SENTINEL } }), { strict: true });
       expect.unreachable("strict must throw");
     } catch (err) {
       const msg = (err as Error).message;
@@ -488,18 +491,14 @@ describe("D — R9 : onWarn message AND structured diagnostic never carry value"
 
 describe("E — typo props forwarded as-is (compiler is not the cap gate)", () => {
   it("maxLines: absurd-large value compiles without warn, value forwarded", () => {
-    const { diagnostics, ..._ } = collect(
-      bundle({ kind: "text", id: "t", maxLines: 999_999 }),
-    );
+    const { diagnostics, ..._ } = collect(bundle({ kind: "text", id: "t", maxLines: 999_999 }));
     expect(diagnostics).toHaveLength(0);
     const out = compileBundle(bundle({ kind: "text", id: "t", maxLines: 999_999 }));
     expect(out.root.props?.maxLines).toBe(999_999);
   });
 
   it("lineHeight: absurd value compiles without warn, value forwarded", () => {
-    const { diagnostics } = collect(
-      bundle({ kind: "text", id: "t", style: { lineHeight: 9999 } }),
-    );
+    const { diagnostics } = collect(bundle({ kind: "text", id: "t", style: { lineHeight: 9999 } }));
     expect(diagnostics).toHaveLength(0);
     const out = compileBundle(bundle({ kind: "text", id: "t", style: { lineHeight: 9999 } }));
     expect(out.root.props?.lineHeight).toBe(9999);
@@ -510,9 +509,7 @@ describe("E — typo props forwarded as-is (compiler is not the cap gate)", () =
       bundle({ kind: "text", id: "t", style: { letterSpacing: -50_000 } }),
     );
     expect(diagnostics).toHaveLength(0);
-    const out = compileBundle(
-      bundle({ kind: "text", id: "t", style: { letterSpacing: -50_000 } }),
-    );
+    const out = compileBundle(bundle({ kind: "text", id: "t", style: { letterSpacing: -50_000 } }));
     expect(out.root.props?.letterSpacing).toBe(-50_000);
   });
 
@@ -561,9 +558,7 @@ describe("F — independent per-node warnings (no cross-node dedup)", () => {
       id: `t${i}`,
       weirdProp: i,
     })) as unknown as LSMLNode[];
-    const { diagnostics } = collect(
-      bundle({ kind: "stack", id: "root", children }),
-    );
+    const { diagnostics } = collect(bundle({ kind: "stack", id: "root", children }));
     const matches = diagnostics.filter((d) => d.field === "weirdProp");
     expect(matches).toHaveLength(100);
     // The prop value (i = 0..99) must not appear as a standalone JSON value.
@@ -582,9 +577,7 @@ describe("F — independent per-node warnings (no cross-node dedup)", () => {
       id: `nt${i}`,
       secret: SENTINEL,
     })) as unknown as LSMLNode[];
-    const { diagnostics } = collect(
-      bundle({ kind: "stack", id: "root", children }),
-    );
+    const { diagnostics } = collect(bundle({ kind: "stack", id: "root", children }));
     expect(JSON.stringify(diagnostics)).not.toContain(SENTINEL);
   });
 });

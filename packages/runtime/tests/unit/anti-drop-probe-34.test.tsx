@@ -28,7 +28,6 @@ import { Tree } from "../../src/render/tree.js";
 import {
   addDiagnosticsHandler,
   emitDiagnostic,
-  ANON_NODE_ID,
   type RenderDiagnostic,
 } from "../../src/render/diagnostics.js";
 import { checkNodeProps } from "../../src/render/prop-allowlist.js";
@@ -278,7 +277,7 @@ describe("C — fontFamily shape validation boundaries", () => {
     ["Bebas Neue", "two words"],
     ["Noto Sans CJK SC", "ASCII Noto (no non-ASCII chars)"],
     ["'My Font', sans-serif", "quoted family with fallback"],
-    ["\"JetBrains Mono\", monospace", "double-quoted with fallback"],
+    ['"JetBrains Mono", monospace', "double-quoted with fallback"],
     ["Font_With_Underscores", "underscores"],
     ["Font-With-Dashes", "dashes"],
     ["Font123", "trailing digits"],
@@ -387,10 +386,9 @@ describe("D — R9 under adversity : sentinel never leaks anywhere", () => {
       "typo-r9",
     );
     parseFontFamily(EVIL);
-    const all = [
-      JSON.stringify(diagnostics),
-      ...warnSpy.mock.calls.flat().map(String),
-    ].join(" || ");
+    const all = [JSON.stringify(diagnostics), ...warnSpy.mock.calls.flat().map(String)].join(
+      " || ",
+    );
     expect(all).not.toContain(SENTINEL);
   });
 
@@ -447,9 +445,7 @@ describe("E — perf : WeakSet gate prevents re-audit on live delta flood", () =
 
   it("addDiagnosticsHandler called N times in a loop: only one handler registered per call", () => {
     const all: RenderDiagnostic[] = [];
-    const removers = Array.from({ length: 10 }, () =>
-      addDiagnosticsHandler((d) => all.push(d)),
-    );
+    const removers = Array.from({ length: 10 }, () => addDiagnosticsHandler((d) => all.push(d)));
     emitDiagnostic("n", "f", "r");
     // 10 handlers each receive 1 diagnostic.
     expect(all).toHaveLength(10);
