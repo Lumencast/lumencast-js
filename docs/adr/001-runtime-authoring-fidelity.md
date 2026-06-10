@@ -286,17 +286,17 @@ Testables, tous mesurés en CI `lumencast-js` sauf mention :
 
 Toutes les RC des phases A et B sont satisfaites. PRs mergées sur `main` :
 
-| PR | Titre abrégé | RC satisfaites |
-| --- | --- | --- |
-| #36 | Strict CSS colour parser + fix injection sites (fill/frame/text) | RC#11 |
-| #37 | Authoring profiles advisory + compiler forwarde `profiles[]` | RC#1, RC#14 |
-| #38 | Typo complète (`lineHeight`, `letterSpacing`, `textTransform`, `textDecoration`, `fontStyle`, `maxLines`) | RC#4 |
-| #39 | Compiler 1.1 lowering complet (`fills[]`, `strokes[]`, `paths[]`/`pathData`, `clipsContent`, `keyframes`+`stagger_ms`, `animate.from.filter`, `scale [sx,sy]`, `cornerRadius`→`radius`) | RC#2 |
-| #40 | Rendu `shape geometry:"path"` — `<path d fill-rule>` par subpath, viewBox, `windingRule` | RC#3, RC#10 |
-| #43 | `frame.clipsContent` → `overflow: hidden/visible` | RC#5 |
-| #44 | CI durcie : job `e2e` gatant, `.gitattributes` line-endings | — |
-| #45 | `bindAnimate` §6.3 + sRGB color interp §6.5 + spring `mass` + re-clamp filter live R8 | RC#6, RC#12, RC#13 |
-| #46 | Anti-silent-drop : comptabilité clés consommées, `onWarn`/`strict`, primitive prop allowlists | RC#7 |
+| PR  | Titre abrégé                                                                                                                                                                            | RC satisfaites     |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| #36 | Strict CSS colour parser + fix injection sites (fill/frame/text)                                                                                                                        | RC#11              |
+| #37 | Authoring profiles advisory + compiler forwarde `profiles[]`                                                                                                                            | RC#1, RC#14        |
+| #38 | Typo complète (`lineHeight`, `letterSpacing`, `textTransform`, `textDecoration`, `fontStyle`, `maxLines`)                                                                               | RC#4               |
+| #39 | Compiler 1.1 lowering complet (`fills[]`, `strokes[]`, `paths[]`/`pathData`, `clipsContent`, `keyframes`+`stagger_ms`, `animate.from.filter`, `scale [sx,sy]`, `cornerRadius`→`radius`) | RC#2               |
+| #40 | Rendu `shape geometry:"path"` — `<path d fill-rule>` par subpath, viewBox, `windingRule`                                                                                                | RC#3, RC#10        |
+| #43 | `frame.clipsContent` → `overflow: hidden/visible`                                                                                                                                       | RC#5               |
+| #44 | CI durcie : job `e2e` gatant, `.gitattributes` line-endings                                                                                                                             | —                  |
+| #45 | `bindAnimate` §6.3 + sRGB color interp §6.5 + spring `mass` + re-clamp filter live R8                                                                                                   | RC#6, RC#12, RC#13 |
+| #46 | Anti-silent-drop : comptabilité clés consommées, `onWarn`/`strict`, primitive prop allowlists                                                                                           | RC#7               |
 
 RC#8 (budgets `broadcast` ≤ 200 KiB, delta→DOM p95 ≤ 50 ms, 0 layout event) et RC#9 (RFC LSML 1.2 ouverte sur `lumencast-protocol` — issue #34 dudit repo) ont également été validées à l'occasion de la campagne.
 
