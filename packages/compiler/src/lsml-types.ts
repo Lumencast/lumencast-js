@@ -113,9 +113,8 @@ export interface LSMLAnimateDirective extends LSMLAnimateState {
     easing?: "linear" | "ease-in" | "ease-out" | "ease-in-out" | "spring";
     stiffness?: number;
     damping?: number;
-    /** 1.1 §6.2 — spring mass. Typed for forward-compat ; not lowered
-     *  yet (ADR 001 phase B) — the compiler emits an `onWarn` diagnostic
-     *  instead of dropping it silently. */
+    /** 1.1 §6.2 — spring mass (kg, default 1). Lowered into the
+     *  runtime's `SpringTransition` (ADR 001 phase B, issue #33). */
     mass?: number;
   };
   /** LSML 1.1 — mount-time initial state. When present, the element
@@ -133,9 +132,11 @@ export interface LSMLBaseNode {
   /** 1.1+ — bind universal props to leaf paths. */
   bindUniversal?: Record<string, string>;
   animate?: LSMLAnimateDirective;
-  /** 1.1+ §6.3 — animation targets bound to leaf paths. Typed for
-   *  forward-compat ; not lowered yet (ADR 001 phase B) — the compiler
-   *  emits an `onWarn` diagnostic instead of dropping it silently. */
+  /** 1.1+ §6.3 — animation targets bound to leaf paths. Keys MUST
+   *  reference animatable properties (the §6.1 list, plus the node
+   *  kind's colour-typed property per §6.5) ; any other key is a hard
+   *  compile error (ADR 001 §3.3 / RC#13 — throw, not warn). Lowered
+   *  to the RenderNode `animateBindings` map. */
   bindAnimate?: Record<string, string>;
   /** 1.1+ §6.6 — keyframe sequence, played on mount or `key` change. */
   keyframes?: LSMLKeyframes;
