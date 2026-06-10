@@ -24,7 +24,7 @@ que la chaîne d'authoring Figma → LSML → antenne casse côté **renderer/co
   ni `paths[]`, ni `clipsContent`, ni `keyframes`/`stagger_ms` ; `animate.from.filter` est
   droppé (`lowerAnimateState`), `scale: [sx,sy]` collapse à `sx`, et il émet
   `props.cornerRadius` alors que `shape.tsx` lit `resolved.radius` → le corner radius core est
-  perdu en silence sur le chemin compilé. Le header de `lsml-types.ts` *annonce* `fills[]`/
+  perdu en silence sur le chemin compilé. Le header de `lsml-types.ts` _annonce_ `fills[]`/
   `backgrounds[]`/profils 1.1 mais les types ne les portent pas.
 - **Le runtime viole §17.5.1** : `validateBundleProfiles` (`render/bundle.ts:143-153`) rejette
   `BUNDLE_INCOMPATIBLE` tout profil hors `x-lumencast.color-srgb-1.0`, sans l'exception
@@ -88,12 +88,13 @@ vendor-specific (constraints, layout overrides, corner smoothing/squircle, textR
 image filters) — advisory, jamais rendu.
 
 **Alternatives écartées** :
-- *Implémenter le profil dans le runtime* : viole la doctrine §17.5/DECISIONS.md, couple le
+
+- _Implémenter le profil dans le runtime_ : viole la doctrine §17.5/DECISIONS.md, couple le
   runtime canonique à Figma, non portable vers go/rs/py/svelte/vue, fait du profil un
   standard de facto non gouverné par RFC.
-- *Statu quo (profil roundtrip-only sans promotion core)* : laisse ~60 % de la fidélité
+- _Statu quo (profil roundtrip-only sans promotion core)_ : laisse ~60 % de la fidélité
   capturée morte au rendu ; l'authoring Zab reste bloqué.
-- *Tout pousser en 1.2 d'un coup (y c. typo/paths)* : inutile — la moitié des gaps est déjà
+- _Tout pousser en 1.2 d'un coup (y c. typo/paths)_ : inutile — la moitié des gaps est déjà
   spec'd en 1.1, c'est de la dette d'implémentation pure (Phase A), pas un sujet de spec.
 
 ### 3.2 D2 — Phase A : rembourser la dette d'implémentation LSML 1.1 (aucun changement de spec)
@@ -159,10 +160,10 @@ Tout champ **spec'd** non honoré doit produire un diagnostic ; le drop muet dev
 
 ### 3.5 Phasage et dépendances
 
-| Phase | Contenu | Dépendances |
-|---|---|---|
-| **A** | D2 (dette 1.1) + D4 compiler/runtime | aucune — démarrable immédiatement |
-| **B** | D3 (`bindAnimate`, color interp, spring mass) | parallèle à A (touche `animate/`) |
+| Phase | Contenu                                                                               | Dépendances                                                                                             |
+| ----- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **A** | D2 (dette 1.1) + D4 compiler/runtime                                                  | aucune — démarrable immédiatement                                                                       |
+| **B** | D3 (`bindAnimate`, color interp, spring mass)                                         | parallèle à A (touche `animate/`)                                                                       |
 | **C** | D1 (RFC LSML 1.2 → implémentation runtime des nouveaux champs core, migration plugin) | acceptation du RFC sur lumencast-protocol (process BDFL actuel : triage maintainer possible avant 14 j) |
 
 A et B se livrent en minors `@lumencast/compiler` / `@lumencast/runtime` (additif, semver
@@ -184,15 +185,15 @@ minor). C se livre après bump spec 1.2.
 
 ## 5. Risks
 
-| Risque | Sévérité | Mitigation |
-|---|---|---|
-| Dépassement du budget bundle 200 KiB gz | moyen | CI `check:bundle` bloquante ; parser couleur minimal (pas de lib) ; tree-shake par mode |
-| `bindAnimate` à haute fréquence de deltas → saturation retarget | moyen | spring velocity-carry (pas de remount) ; budget p95 ≤ 50 ms vérifié en E2E Playwright |
-| Blend modes / masques (1.2) créent des stacking contexts → coût compositing en CEF | moyen | perf trace E2E (0 layout event) ; clamp éventuel documenté dans le RFC |
-| Warnings anti-drop bruyants sur bundles existants | faible | défaut warn-only, strict opt-in ; exemption metadata/authoring |
-| Contenu non-trusté injecté dans le rendu (`pathData` SVG, couleurs CSS, dash patterns) | élevé | traité par construction : RC#10–RC#14 (threat model Bastion 2026-06-10) |
-| RFC 1.2 retardé → Phase C glisse | faible | Phases A+B livrent ~70 % de la valeur sans spec change |
-| Divergence multi-SDK (go/rs/py/svelte/vue) | accepté temporairement | listée dans le RFC ; runtime React = référence de conformance |
+| Risque                                                                                 | Sévérité               | Mitigation                                                                              |
+| -------------------------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
+| Dépassement du budget bundle 200 KiB gz                                                | moyen                  | CI `check:bundle` bloquante ; parser couleur minimal (pas de lib) ; tree-shake par mode |
+| `bindAnimate` à haute fréquence de deltas → saturation retarget                        | moyen                  | spring velocity-carry (pas de remount) ; budget p95 ≤ 50 ms vérifié en E2E Playwright   |
+| Blend modes / masques (1.2) créent des stacking contexts → coût compositing en CEF     | moyen                  | perf trace E2E (0 layout event) ; clamp éventuel documenté dans le RFC                  |
+| Warnings anti-drop bruyants sur bundles existants                                      | faible                 | défaut warn-only, strict opt-in ; exemption metadata/authoring                          |
+| Contenu non-trusté injecté dans le rendu (`pathData` SVG, couleurs CSS, dash patterns) | élevé                  | traité par construction : RC#10–RC#14 (threat model Bastion 2026-06-10)                 |
+| RFC 1.2 retardé → Phase C glisse                                                       | faible                 | Phases A+B livrent ~70 % de la valeur sans spec change                                  |
+| Divergence multi-SDK (go/rs/py/svelte/vue)                                             | accepté temporairement | listée dans le RFC ; runtime React = référence de conformance                           |
 
 **Surface sécurité** : `pathData`/`paths[].data` (strings SVG `d` non-trustées rendues en
 attribut), valeurs couleur/filter injectées en CSS inline, complexité de parse bornée
