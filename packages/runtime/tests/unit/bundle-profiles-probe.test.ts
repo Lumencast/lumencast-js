@@ -237,15 +237,42 @@ describe("profiles: null coercion (malformed JSON from untrusted source)", () =>
 
 describe("non-array profiles (malformed JSON — unsafe cast path)", () => {
   // When the server returns `profiles: "x-figma.authoring/1"` instead of an
-  // array, validateBundleProfiles receives a string. The current
-  // implementation calls `.filter()` on it which does not exist on a string
-  // and would throw a TypeError. This test documents the actual behaviour.
-  it("validateBundleProfiles with a string profiles value: should not silently pass", () => {
-    // Either throws a TypeError (unguarded) or rejects with
-    // BundleIncompatibleError — both are acceptable defensive outcomes.
-    // A silent pass (no throw) would be a bug: a string-shaped profiles
-    // field would bypass all validation.
-    expect(() => validateBundleProfiles(bundleWith("x-figma.authoring/1"))).toThrow(); // TypeError or BundleIncompatibleError
+  // array, validateBundleProfiles receives a string through the unchecked
+  // `json as RenderBundle` cast in FetcherImpl.get(). The rejection must be
+  // TYPED (BundleIncompatibleError, code BUNDLE_INCOMPATIBLE) — never a raw
+  // TypeError — and the diagnostic must not echo the malformed value.
+  it("validateBundleProfiles with a string profiles value throws BundleIncompatibleError", () => {
+    expect(() => validateBundleProfiles(bundleWith("x-figma.authoring/1"))).toThrow(
+      BundleIncompatibleError,
+    );
+  });
+
+  it("the diagnostic does not echo the malformed value", () => {
+    try {
+      validateBundleProfiles(bundleWith("x-figma.authoring/1"));
+      expect.fail("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(BundleIncompatibleError);
+      expect((e as BundleIncompatibleError).message).not.toContain("x-figma.authoring/1");
+      expect((e as BundleIncompatibleError).unsupportedProfiles).not.toContain(
+        "x-figma.authoring/1",
+      );
+    }
+  });
+
+  // Symmetry: preload() and get() same typed verdict
+  it("preload() rejects a string-shaped profiles field with BundleIncompatibleError", () => {
+    const fetcher = createBundleFetcher({ baseUrl: "http://example.test" });
+    expect(() => fetcher.preload(bundleWith("x-figma.authoring/1"))).toThrow(
+      BundleIncompatibleError,
+    );
+  });
+
+  it("get() rejects a string-shaped profiles field with BundleIncompatibleError", async () => {
+    const bundle = bundleWith("x-figma.authoring/1");
+    await expect(fetcherFor(bundle).get("scene", GOOD_VERSION)).rejects.toBeInstanceOf(
+      BundleIncompatibleError,
+    );
   });
 });
 
@@ -254,14 +281,46 @@ describe("non-array profiles (malformed JSON — unsafe cast path)", () => {
 // ---------------------------------------------------------------------------
 
 describe("non-string entries in profiles array (malformed JSON)", () => {
-  // isAuthoringProfile(id) calls id.indexOf("/") — if id is a number, this
-  // throws a TypeError. This test documents the actual behaviour.
-  it("validateBundleProfiles with [42] should not silently pass", () => {
-    expect(() => validateBundleProfiles(bundleWith([42]))).toThrow();
+  // A non-string entry never reaches isAuthoringProfile (typeof guard runs
+  // first) and is rejected as a typed BundleIncompatibleError. The
+  // diagnostic carries a shape placeholder, never the raw value.
+  it("validateBundleProfiles with [42] throws BundleIncompatibleError without echoing the value", () => {
+    try {
+      validateBundleProfiles(bundleWith([42]));
+      expect.fail("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(BundleIncompatibleError);
+      expect((e as BundleIncompatibleError).message).not.toContain("42");
+      expect((e as BundleIncompatibleError).unsupportedProfiles).not.toContain(42);
+    }
   });
 
-  it("validateBundleProfiles with [null, 'x-figma.authoring/1'] should not silently pass", () => {
-    expect(() => validateBundleProfiles(bundleWith([null, "x-figma.authoring/1"]))).toThrow();
+  it("validateBundleProfiles with [null, 'x-figma.authoring/1'] throws BundleIncompatibleError", () => {
+    // The advisory authoring entry stays advisory; only the malformed
+    // entry causes the typed rejection.
+    try {
+      validateBundleProfiles(bundleWith([null, "x-figma.authoring/1"]));
+      expect.fail("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(BundleIncompatibleError);
+      expect((e as BundleIncompatibleError).unsupportedProfiles).toHaveLength(1);
+      expect((e as BundleIncompatibleError).unsupportedProfiles).not.toContain(
+        "x-figma.authoring/1",
+      );
+    }
+  });
+
+  // Symmetry: preload() and get() same typed verdict
+  it("preload() rejects a bundle with a non-string profile entry with BundleIncompatibleError", () => {
+    const fetcher = createBundleFetcher({ baseUrl: "http://example.test" });
+    expect(() => fetcher.preload(bundleWith([42]))).toThrow(BundleIncompatibleError);
+  });
+
+  it("get() rejects a bundle with a non-string profile entry with BundleIncompatibleError", async () => {
+    const bundle = bundleWith([42]);
+    await expect(fetcherFor(bundle).get("scene", GOOD_VERSION)).rejects.toBeInstanceOf(
+      BundleIncompatibleError,
+    );
   });
 });
 

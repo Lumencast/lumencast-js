@@ -184,14 +184,28 @@ export class BundleIncompatibleError extends Error {
  * Authoring profiles (`x-<vendor>.authoring/<major>`, LSML 1.1 §17.5.1)
  * are advisory and skipped : their absence from the supported set is
  * never a rejection cause. Every other (behavioural) unsupported profile
- * keeps the hard §17.3.1 `BUNDLE_INCOMPATIBLE` rejection. */
+ * keeps the hard §17.3.1 `BUNDLE_INCOMPATIBLE` rejection.
+ *
+ * Malformed-shape guard : `bundle` may come from an unchecked
+ * `json as RenderBundle` cast on untrusted server JSON
+ * (`FetcherImpl.get`). A non-array `profiles` or a non-string entry is
+ * therefore reachable at runtime and is rejected as
+ * `BundleIncompatibleError` (typed, code BUNDLE_INCOMPATIBLE) — never a
+ * raw TypeError. The diagnostic never echoes the malformed value, only a
+ * shape placeholder. */
 export function validateBundleProfiles(
   bundle: { profiles?: string[] },
   supported: ReadonlySet<string> = SUPPORTED_PROFILES,
 ): void {
-  const profiles = bundle.profiles;
-  if (!profiles || profiles.length === 0) return;
-  const missing = profiles.filter((p) => !isAuthoringProfile(p) && !supported.has(p));
+  const profiles: unknown = bundle.profiles;
+  if (!profiles) return;
+  if (!Array.isArray(profiles)) {
+    throw new BundleIncompatibleError(["<malformed: profiles is not an array>"]);
+  }
+  if (profiles.length === 0) return;
+  const missing = profiles
+    .filter((p) => typeof p !== "string" || (!isAuthoringProfile(p) && !supported.has(p)))
+    .map((p) => (typeof p === "string" ? p : "<malformed: non-string profile entry>"));
   if (missing.length > 0) {
     throw new BundleIncompatibleError(missing);
   }
