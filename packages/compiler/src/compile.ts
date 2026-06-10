@@ -302,18 +302,23 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
       }
       // §6.1 — `filter` is animatable ; previously dropped in silence.
       if (node.animate.filter !== undefined) transitions["filter"] = tx;
+      // §6.3 — a bound animation channel must honour the declared
+      // `animate.transition` too : emit a per-prop transition entry for
+      // every bindAnimate key so the runtime retargets with the
+      // authored timing instead of its default spring.
+      if (node.bindAnimate) {
+        for (const key of Object.keys(node.bindAnimate)) {
+          for (const fk of transitionKeysForBindAnimate(key, node.kind)) {
+            transitions[fk] = tx;
+          }
+        }
+      }
       // Type assertion: RenderNode.transitions matches Transition shape; the
       // cast keeps the compiler self-contained without re-importing the runtime
       // Transition type.
       if (Object.keys(transitions).length > 0) {
         out.transitions = transitions as RenderNode["transitions"];
       }
-    }
-
-    // §6.2 `transition.mass` is spec'd but not lowered yet (ADR 001
-    // phase B adds it to SpringTransition). Anti-silent-drop : diagnose.
-    if (node.animate.transition?.mass !== undefined) {
-      warn(opts, node.id, "animate.transition.mass", "is not lowered yet (ADR 001 phase B)");
     }
 
     // LSML 1.1 §6 `animate.from` → flat framer `initial` map. Lowered
@@ -329,10 +334,13 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
     }
   }
 
-  // §6.3 `bindAnimate` is spec'd but not lowered yet (ADR 001 phase B,
-  // issue #33). Anti-silent-drop : diagnose instead of dropping.
+  // §6.3 `bindAnimate` → RenderNode `animateBindings` (ADR 001 §3.3,
+  // issue #33). Validation is HARD : any key outside the animatable set
+  // throws at compile (RC#13 — a malformed bindAnimate is an invalid
+  // directive, the warn-by-default policy §3.4 does not apply).
   if (node.bindAnimate !== undefined) {
-    warn(opts, node.id, "bindAnimate", "is not lowered yet (ADR 001 phase B)");
+    const lowered = lowerBindAnimate(node.bindAnimate, node.kind, node.id);
+    if (Object.keys(lowered).length > 0) out.animateBindings = lowered;
   }
 
   // LSML 1.1 §6.6 — keyframe sequence, lowered to the runtime
@@ -342,6 +350,94 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
   }
 
   return out;
+}
+
+// --- bindAnimate lowering (LSML §6.3 — ADR 001 §3.3, RC#13) ------------
+//
+// `bindAnimate` keys MUST reference animatable properties only : the
+// §6.1 GPU-composited list, plus the node kind's colour-typed property
+// blessed by §6.5 for continuous colour interpolation. Anything else
+// (layout properties, unknown channels) is a HARD compile error — never
+// a warning (RC#13, exception to the §3.4 warn-by-default policy : an
+// invalid directive is not a "spec'd field we don't support yet").
+
+/** §6.1 animatable property keys accepted on every primitive. */
+export const BIND_ANIMATE_SCALAR_KEYS: ReadonlySet<string> = new Set([
+  "opacity",
+  "transform.translate",
+  "transform.scale",
+  "transform.rotate",
+  "filter.blur",
+  "filter.brightness",
+]);
+
+/** §6.5 colour-typed properties reachable via bindAnimate, per node
+ *  kind. Kept to the single-colour core props for now ; `fills[].color`
+ *  / `backgrounds[]` entries are array-typed and stay out of scope
+ *  (documented in ADR 001 phase B). */
+export const BIND_ANIMATE_COLOR_KEYS: Readonly<Record<string, string>> = {
+  text: "style.color",
+  shape: "fill",
+  frame: "background",
+};
+
+function isBindAnimateKeyAllowed(key: string, kind: string): boolean {
+  if (BIND_ANIMATE_SCALAR_KEYS.has(key)) return true;
+  return BIND_ANIMATE_COLOR_KEYS[kind] === key;
+}
+
+/** Validate + lower a §6.3 `bindAnimate` map. Keys keep their spec
+ *  names verbatim (the runtime maps them onto motion channels) ; values
+ *  must be non-empty LeafPath strings. Throws on any violation (RC#13) ;
+ *  per R9 the error names the node + key, never the bound value. */
+function lowerBindAnimate(
+  bind: Record<string, string>,
+  kind: string,
+  nodeId: string | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, path] of Object.entries(bind)) {
+    if (!isBindAnimateKeyAllowed(key, kind)) {
+      throw invalid(
+        nodeId,
+        `bindAnimate.${key}`,
+        "is not an animatable property for this primitive (LSML §6.1/§6.5, RC#13)",
+      );
+    }
+    if (typeof path !== "string" || path.length === 0) {
+      throw invalid(nodeId, `bindAnimate.${key}`, "must bind a non-empty LeafPath string");
+    }
+    out[key] = path;
+  }
+  return out;
+}
+
+/** The per-prop `transitions` entries a bound channel resolves at the
+ *  runtime (mirrors the static-target lowering above : translate drives
+ *  framer `x`/`y`, scale may be per-axis, filter channels share the
+ *  composed `filter` entry, colour channels use the runtime prop name). */
+function transitionKeysForBindAnimate(key: string, kind: string): string[] {
+  switch (key) {
+    case "opacity":
+      return ["opacity"];
+    case "transform.translate":
+      return ["x", "y"];
+    case "transform.scale":
+      return ["scale", "scaleX", "scaleY"];
+    case "transform.rotate":
+      return ["rotate"];
+    case "filter.blur":
+    case "filter.brightness":
+      return ["filter"];
+    default:
+      // Colour channel — the runtime looks the transition up under the
+      // primitive's prop name (text → `colour`, shape → `fill`,
+      // frame → `background`).
+      if (BIND_ANIMATE_COLOR_KEYS[kind] === key) {
+        return [kind === "text" ? "colour" : key];
+      }
+      return [];
+  }
 }
 
 // --- path validation (ADR 001 §6 RC#10 — compile-side gate) -----------
@@ -661,14 +757,18 @@ function compileAnimate(a: LSMLAnimateDirective):
       duration_ms: number;
       ease?: "linear" | "cubic-in" | "cubic-out" | "cubic-in-out";
     }
-  | { kind: "spring"; stiffness?: number; damping?: number }
+  | { kind: "spring"; stiffness?: number; damping?: number; mass?: number }
   | undefined {
   const t = a.transition;
   if (!t) return undefined;
   if (t.easing === "spring") {
-    const out: { kind: "spring"; stiffness?: number; damping?: number } = { kind: "spring" };
+    const out: { kind: "spring"; stiffness?: number; damping?: number; mass?: number } = {
+      kind: "spring",
+    };
     if (t.stiffness !== undefined) out.stiffness = t.stiffness;
     if (t.damping !== undefined) out.damping = t.damping;
+    // §6.2 — spring mass (default 1 runtime-side, ADR 001 phase B).
+    if (t.mass !== undefined) out.mass = t.mass;
     return out;
   }
   return {

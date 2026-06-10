@@ -2,6 +2,7 @@
 // primitives, handles `repeat` specially.
 
 import { useSignals } from "@preact/signals-react/runtime";
+import { motion } from "framer-motion";
 import { useMemo, type ReactNode } from "react";
 import type { Store } from "../state/store";
 import type { Transition } from "../animate/transitions";
@@ -11,6 +12,7 @@ import type { RenderNode } from "./bundle";
 import { UniversalWrapper, type SizingMode } from "./universal-wrapper";
 import { KeyframePlayer } from "./keyframe-player";
 import { StaggerContext, computeStaggerDelayMs } from "./stagger-context";
+import { useBindAnimate } from "./bind-animate";
 
 export interface TreeProps {
   node: RenderNode;
@@ -41,6 +43,13 @@ function Node({ node, store }: TreeProps): ReactNode {
     // when the inputs haven't changed.
     [node, store, scope, ...readBindingValues(node, store, scope)],
   );
+
+  // LSML 1.1 §6.3 — bindAnimate : continuous interpolation toward live
+  // leaf values, no remount (issue #33). Scalar channels ride motion
+  // values on a wrapping motion.div ; colour channels (§6.5) flow back
+  // into the primitive's resolved prop as interpolated, re-validated
+  // colour strings.
+  const bindAnimate = useBindAnimate(node, store, scope);
 
   const Primitive = PRIMITIVES[node.kind as keyof typeof PRIMITIVES];
   if (!Primitive) {
@@ -87,10 +96,17 @@ function Node({ node, store }: TreeProps): ReactNode {
     sizing: extractSizing(resolved.sizing),
   };
 
-  const body = (
+  // Merge live-interpolated colour values (§6.5) over the resolved
+  // props — the primitive re-validates them through `parseCssColor`.
+  const resolvedWithColors =
+    Object.keys(bindAnimate.colorProps).length > 0
+      ? { ...resolved, ...bindAnimate.colorProps }
+      : resolved;
+
+  let body = (
     <UniversalWrapper {...universal}>
       <Primitive
-        resolved={resolved}
+        resolved={resolvedWithColors}
         transitionFor={transitionFor}
         animateInitial={node.animate_initial}
       >
@@ -98,6 +114,17 @@ function Node({ node, store }: TreeProps): ReactNode {
       </Primitive>
     </UniversalWrapper>
   );
+
+  // Scalar bindAnimate channels apply on a wrapping motion.div (same
+  // composition model as UniversalWrapper). Motion values mutate the
+  // style directly — zero React re-render per frame on the hot path.
+  if (bindAnimate.motionStyle) {
+    body = (
+      <motion.div data-lumencast-bind-animate={node.id ?? ""} style={bindAnimate.motionStyle}>
+        {body}
+      </motion.div>
+    );
+  }
 
   // LSML 1.1 §6.6 — when a primitive declares keyframes, wrap the
   // rendered subtree in a player that drives framer-motion through the

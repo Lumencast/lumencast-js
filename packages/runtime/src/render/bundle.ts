@@ -48,6 +48,17 @@ export interface RenderNode {
    *  the primitive applies no `initial` and the prior no-mount-play
    *  behaviour holds (backward compatible). */
   animate_initial?: Record<string, number | string>;
+  /** LSML 1.1 §6.3 — animation targets bound to leaf paths
+   *  (`bindAnimate`). Keys are the spec property names (`opacity`,
+   *  `transform.translate`, `transform.scale`, `transform.rotate`,
+   *  `filter.blur`, `filter.brightness`, plus the kind's colour-typed
+   *  property per §6.5 : `style.color` / `fill` / `background`) ; values
+   *  are LeafPaths. The runtime subscribes each path's leaf-grain signal
+   *  and retargets a Framer motion value on change — continuous
+   *  interpolation toward the live value, no remount. Deltas are
+   *  coalesced per frame (one retarget max per rAF per binding,
+   *  ADR 001 RC#13). */
+  animateBindings?: Record<string, string>;
   /** LSML 1.1 §6.6 — multi-step keyframe sequence played on mount or
    *  whenever `keyframes.key` (LeafPath) changes. Coexists with
    *  `transitions` ; the runtime applies whichever was last triggered

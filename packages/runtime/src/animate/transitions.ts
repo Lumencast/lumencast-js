@@ -11,6 +11,8 @@
 // filter). Primitives enforce this at the DOM level by exposing those props as
 // motion-bindable values rather than raw CSS.
 
+import { sanitizeCssFilterString, warnRejectedFilter } from "../render/filter-clamp";
+
 export type TransitionKind = "none" | "tween" | "spring" | "crossfade";
 
 export interface TweenTransition {
@@ -23,6 +25,8 @@ export interface SpringTransition {
   kind: "spring";
   stiffness?: number;
   damping?: number;
+  /** LSML 1.1 §6.2 — spring mass (kg). Default 1 (framer default). */
+  mass?: number;
 }
 
 export interface CrossfadeTransition {
@@ -44,6 +48,7 @@ export interface FramerTransition {
   type?: "tween" | "spring";
   stiffness?: number;
   damping?: number;
+  mass?: number;
 }
 
 const NO_ANIMATION: FramerTransition = { duration: 0 };
@@ -69,6 +74,7 @@ export function toFramer(t: Transition | undefined): FramerTransition {
       type: "spring",
       ...(t.stiffness !== undefined ? { stiffness: t.stiffness } : {}),
       ...(t.damping !== undefined ? { damping: t.damping } : {}),
+      ...(t.mass !== undefined ? { mass: t.mass } : {}),
     };
   }
   // crossfade at the per-prop level degenerates into a tween on opacity.
@@ -182,13 +188,28 @@ export function mountPlay(
     // preserves the existing "no jump, no mount-play" behaviour.
     return { initial: base, animate: base };
   }
+  // R8 runtime half (ADR 001 §5.1, issue #42) — `animate_initial` may
+  // come from a hand-crafted bundle that never went through the
+  // compiler clamps. Re-gate the filter string ; rejected → drop the
+  // key (the element mounts at the identity filter instead).
+  let from = initial;
+  if (initial["filter"] !== undefined) {
+    const safe = sanitizeCssFilterString(initial["filter"]);
+    from = { ...initial };
+    if (safe === null) {
+      warnRejectedFilter("animate_initial.filter");
+      delete from["filter"];
+    } else {
+      from["filter"] = safe;
+    }
+  }
   const animate: Record<string, number | string> = { ...base };
-  for (const key of Object.keys(initial)) {
+  for (const key of Object.keys(from)) {
     if (!(key in animate)) {
       animate[key] = INITIAL_IDENTITY[key] ?? 0;
     }
   }
-  return { initial, animate };
+  return { initial: from, animate };
 }
 
 /**
@@ -215,6 +236,8 @@ export function parseWireTransition(value: unknown): Transition | undefined {
     const out: SpringTransition = { kind: "spring" };
     if (typeof v.stiffness === "number") out.stiffness = v.stiffness;
     if (typeof v.damping === "number") out.damping = v.damping;
+    // LSML §6.2 — mass rides the same wire spring shape.
+    if (typeof v.mass === "number") out.mass = v.mass;
     return out;
   }
   return undefined;

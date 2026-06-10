@@ -57,7 +57,25 @@ vi.mock("framer-motion", () => {
       },
     },
   );
-  return { motion };
+  // Minimal motion-value stubs — tree.tsx's useBindAnimate (issue #33)
+  // creates a fixed motion-value channel set unconditionally (hook-order
+  // stability), so the mock must provide these even though no node in
+  // this suite carries `animateBindings`.
+  const stubMotionValue = () => ({
+    get: () => 0,
+    set: () => {},
+    jump: () => {},
+    on: () => () => {},
+    getVelocity: () => 0,
+    stop: () => {},
+    destroy: () => {},
+  });
+  return {
+    motion,
+    useMotionValue: stubMotionValue,
+    useTransform: stubMotionValue,
+    animate: () => ({ stop: () => {} }),
+  };
 });
 
 import { Tree } from "../../src/render/tree.js";

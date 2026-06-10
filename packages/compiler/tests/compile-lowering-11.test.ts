@@ -431,40 +431,37 @@ describe("SVG path allowlist + caps (Bastion RC#10 — compile gate)", () => {
 // ─── 3. anti-silent-drop (ADR 001 §3.4 D4) ───────────────────────────
 
 describe("anti-silent-drop diagnostics", () => {
-  it("warns on bindAnimate (phase B) with node.id + field, never the leaf path value", () => {
-    const { warns } = collectWarns({
+  it("lowers bindAnimate to animateBindings without any warning (phase B landed — issue #33)", () => {
+    const { warns, root } = collectWarns({
       kind: "frame",
       id: "panel",
       size: { w: 1, h: 1 },
-      bindAnimate: { opacity: "secret.live.path" },
+      bindAnimate: { opacity: "ui.panel.opacity" },
     });
-    expect(warns).toHaveLength(1);
-    expect(warns[0]).toContain('"panel"');
-    expect(warns[0]).toContain("bindAnimate");
-    expect(warns[0]).not.toContain("secret.live.path");
+    expect(warns).toHaveLength(0);
+    expect(root.animateBindings).toEqual({ opacity: "ui.panel.opacity" });
   });
 
-  it("warns on animate.transition.mass (phase B)", () => {
-    const { warns } = collectWarns({
+  it("lowers animate.transition.mass into the spring transition (phase B landed — issue #33)", () => {
+    const { warns, root } = collectWarns({
       kind: "frame",
       id: "spring",
       size: { w: 1, h: 1 },
       animate: { transition: { easing: "spring", mass: 2 }, opacity: 1 },
     });
-    expect(warns.some((w) => w.includes('"spring"') && w.includes("mass"))).toBe(true);
-    expect(warns.join(" ")).not.toContain("mass: 2");
+    expect(warns).toHaveLength(0);
+    expect(root.transitions?.opacity).toEqual({ kind: "spring", mass: 2 });
   });
 
-  it("strict: true turns warnings into compile errors", () => {
-    expect(() =>
-      compileBundle(
-        bundle({
-          kind: "frame",
-          size: { w: 1, h: 1 },
-          bindAnimate: { opacity: "x" },
-        }),
-        { strict: true },
-      ),
-    ).toThrow(/bindAnimate/);
+  it("strict: true compiles a valid bindAnimate cleanly (no spurious diagnostic)", () => {
+    const out = compileBundle(
+      bundle({
+        kind: "frame",
+        size: { w: 1, h: 1 },
+        bindAnimate: { opacity: "x" },
+      }),
+      { strict: true },
+    );
+    expect(out.root.animateBindings).toEqual({ opacity: "x" });
   });
 });
