@@ -53,9 +53,12 @@ Voir `CONTRIBUTING.md` pour les commandes complètes.
   - imports `@zablab/solar` → `@lumencast/runtime`
 - **Public surface** stable : `mount()` + types ré-exportés depuis `@lumencast/runtime/index`. Tout changement breaking bumpe le major du paquet.
 - **Reactivity = leaf-grain** — un patch LSDP = un signal mis à jour = re-render uniquement des composants qui lisent ce signal. Pas de réconciliation custom.
-- **GPU-only animations** — primitives n'animent que `transform`, `opacity`, `filter`. Animer `width`/`height`/`top`/`left` est rejeté (vu dans LSML 1.0 § 6).
+- **GPU-only animations** — primitives n'animent que `transform`, `opacity`, `filter`. Animer `width`/`height`/`top`/`left` est rejeté (vu dans LSML §6). `bindAnimate` est implémenté (ADR 001 §3.3, #45) — coalescing par frame, spring velocity-carry, sRGB color interpolation.
 - **Tree-shake par mode au build** — `broadcast` < `control` < `test`. Le code overlay n'apparaît pas dans le bundle `broadcast`. CI vérifie le budget.
-- **Pas de logs en `broadcast`** — aucun chrome de plateforme. Erreurs remontent par `onError`.
+- **Pas de logs en `broadcast`** — aucun chrome de plateforme. Erreurs remontent par `onError`. Les diagnostics anti-drop remontent par `onDiagnostic` (ADR 001 §3.4) — jamais `console.*` hors DEV.
+- **Politique anti-drop active** — tout champ spec'd LSML non honoré produit un diagnostic `{ nodeId, field, reason }` (jamais la valeur — Bastion R9). `CompileOptions.strict: true` convertit les warns en throw. Voir `PRIMITIVE_PROP_ALLOWLIST` (runtime) et `onWarn`/`CompileDiagnostic` (compiler).
+- **Caps sécurité** — `pathData`/`paths[].data` : allowlist SVG `d`, 8 KiB/subpath, cap commandes (RC#10). Valeurs couleur/filter : parser strict `parseCssColor`, regex ancrées, rejet de `url(`/`;`/`}` (RC#11). Filtres clampés au lowering : `blur` ≤ 100 px, `brightness` ≤ 4 (R8). Profils authoring `x-<v>.authoring/<maj>` ignorés sans rejet (segment terminal exact — RC#14).
+- **Capacités runtime rendues (ADR 001 phases A+B, 2026-06-10)** : paths vectoriels (`shape geometry:"path"`, subpaths multiples, `windingRule`), typo complète (`lineHeight`, `letterSpacing`, `textTransform`, `textDecoration`, `fontStyle`, `maxLines`), `clipsContent` (`overflow: hidden/visible`), `bindAnimate`, sRGB color interpolation.
 - **Token-agnostic** — Lumencast ne valide jamais de token, transmet l'opaque string au server.
 
 ## Performance budgets
@@ -95,6 +98,7 @@ Concurrency : cancel sur PR, no cancel sur main. Pas de deploy auto v0.1.x — n
 - **2026-05-03** — Monorepo pnpm (vs Turborepo). Simplicité workspace, lockfile unique. Décision tracée ci-dessous quand un ADR sera nécessaire.
 - **2026-05-03** — TypeScript project references (`tsc -b`) pour l'orchestration build inter-package, Vite library mode pour le bundling browser final du runtime.
 - **2026-05-03** — Le wire protocol Solar (with `since_sequence`, mono-patch `input`, `from/to_scene_id`) est **abandonné** au profit de LSDP/1 final. Réécriture ciblée de `transport/`, `codec`, `sequence`, `types` ; tout le reste (state, render, animate, overlay, modes) reste verbatim avec rebrand.
+- **2026-06-10** — ADR 001 phases A+B livrées (PRs #36–#46) : dette d'implémentation LSML 1.1 remboursée, `bindAnimate` implémenté, politique anti-drop active, threat model Bastion intégré. Phase C gated sur RFC LSML 1.2 (`lumencast-protocol#34`). Voir `docs/adr/001-runtime-authoring-fidelity.md §7`.
 
 ## Source material
 

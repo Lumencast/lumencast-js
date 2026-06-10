@@ -40,6 +40,12 @@ interface MountOptions {
   onStatus?: (s: "disconnected" | "connecting" | "live") => void;
   onError?: (e: LumencastError) => void;
   onMetric?: (m: LumencastMetric) => void;
+  /** Anti-silent-drop diagnostics stream (ADR 001 §3.4).
+   *  Receives structured { nodeId, field, reason } events for every
+   *  spec'd-but-unrendered field, rejected value, or unknown prop.
+   *  Events — not logs: broadcast builds stay console-silent.
+   *  When omitted, a DEV-only console.warn fires instead. */
+  onDiagnostic?: (diagnostic: LumencastDiagnostic) => void;
 }
 
 interface LumencastHandle {
@@ -49,6 +55,57 @@ interface LumencastHandle {
 ```
 
 Full contract: [Lumencast/lumencast-protocol/spec/RUNTIME-API.md](https://github.com/Lumencast/lumencast-protocol/blob/main/spec/RUNTIME-API.md).
+
+### Diagnostics API (ADR 001 §3.4)
+
+Hosts that embed the render tree outside `mount()` (tooling, tests) can subscribe
+to the same anti-drop diagnostics channel directly:
+
+```ts
+import {
+  addDiagnosticsHandler,
+  ANON_NODE_ID,
+  type RenderDiagnostic,
+  type DiagnosticHandler,
+} from "@lumencast/runtime";
+
+const unsubscribe = addDiagnosticsHandler((d: RenderDiagnostic) => {
+  // d.nodeId — RenderNode.id or ANON_NODE_ID
+  // d.field  — field name (e.g. "text.colour", "bindAnimate.opacity")
+  // d.reason — static reason string; never a leaf or prop value (R9)
+  console.warn(d);
+});
+// call unsubscribe() to detach
+```
+
+`RenderDiagnostic` carries **only** `nodeId`, `field`, and `reason` — never the
+value of a leaf or prop (Bastion R9, ADR 001 §5.1).
+
+### Profile gating (LSML 1.1 §17.5.1)
+
+```ts
+import {
+  SUPPORTED_PROFILES,
+  isAuthoringProfile,
+  validateBundleProfiles,
+  BundleIncompatibleError,
+} from "@lumencast/runtime";
+
+// SUPPORTED_PROFILES: readonly string[] — the runtime's supported profile ids
+// isAuthoringProfile(id): true when id matches x-<vendor>.authoring/<major>
+//   (terminal segment rule — never a substring match)
+// validateBundleProfiles(profiles): throws BundleIncompatibleError if a
+//   non-authoring behavioral profile is not in SUPPORTED_PROFILES
+```
+
+### Primitive prop allowlist
+
+```ts
+import { PRIMITIVE_PROP_ALLOWLIST } from "@lumencast/runtime";
+// Record<RenderKind, readonly string[]> — per-primitive list of consumed props.
+// Props present on a RenderNode but absent from the allowlist trigger an
+// onDiagnostic event (reason: "unrecognized prop").
+```
 
 ## Lifecycle
 
