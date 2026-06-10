@@ -11,6 +11,7 @@ import { createStore } from "./state/store.js";
 import { createBundleFetcher, type BundleFetcher, type RenderBundle } from "./render/bundle.js";
 import { WsClient, type ConnectionStatus, type TransportError } from "./transport/ws.js";
 import { validateOptions } from "./internal/validate-options.js";
+import { addDiagnosticsHandler } from "./render/diagnostics.js";
 import type { LumencastError, LumencastHandle, LumencastToken, MountOptions } from "./types.js";
 
 export function mount(options: MountOptions): LumencastHandle {
@@ -35,6 +36,12 @@ export function mount(options: MountOptions): LumencastHandle {
   };
 
   let active = true;
+
+  // ADR 001 §3.4 (issue #34) — anti-silent-drop diagnostics are events
+  // surfaced to the host, never console logs in `broadcast` mode.
+  const removeDiagnosticsHandler = options.onDiagnostic
+    ? addDiagnosticsHandler(options.onDiagnostic)
+    : undefined;
 
   const ws = new WsClient({
     url: options.serverUrl,
@@ -110,6 +117,7 @@ export function mount(options: MountOptions): LumencastHandle {
     disconnect() {
       if (!active) return;
       active = false;
+      removeDiagnosticsHandler?.();
       ws.close();
       root.unmount();
     },

@@ -4,6 +4,7 @@ import type { PrimitiveProps } from "./index";
 import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
 import { backgroundsToCss, parseFills } from "../fill";
 import { parseCssColor, warnRejectedColor } from "../css-color";
+import { emitDiagnostic } from "../diagnostics";
 
 /** Absolute-positioned container with size + transform + opacity.
  *  Animatable on `transform` and `opacity` only — width/height/position
@@ -17,7 +18,13 @@ import { parseCssColor, warnRejectedColor } from "../css-color";
  *  LSML 1.1 §4.3 `clipsContent` (default `true`) clips children outside
  *  the frame's bounds via `overflow: hidden` (ADR 001 §3.2.5, RC#5).
  */
-export function Frame({ resolved, transitionFor, animateInitial, children }: PrimitiveProps) {
+export function Frame({
+  resolved,
+  nodeId,
+  transitionFor,
+  animateInitial,
+  children,
+}: PrimitiveProps) {
   const x = numberOr(resolved.x, 0);
   const y = numberOr(resolved.y, 0);
   const width = sizeProp(resolved.width);
@@ -32,10 +39,10 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
   const rawBackground = resolved.background;
   const legacyBackground = rawBackground === undefined ? undefined : parseCssColor(rawBackground);
   if (rawBackground !== undefined && legacyBackground === null) {
-    warnRejectedColor("frame.background");
+    warnRejectedColor("frame.background", nodeId);
   }
-  const backgrounds = parseFills(resolved.backgrounds);
-  const clipsContent = resolveClipsContent(resolved.clipsContent);
+  const backgrounds = parseFills(resolved.backgrounds, "frame.backgrounds", nodeId);
+  const clipsContent = resolveClipsContent(resolved.clipsContent, nodeId);
 
   // Pick the most expressive declared transition among the animated
   // bindings (transform / opacity). If none, no animation.
@@ -59,12 +66,12 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
     ...(clipsContent ? { overflow: "hidden" } : {}),
   };
   if (backgrounds.length > 0) {
-    Object.assign(style, backgroundsToCss(backgrounds));
+    Object.assign(style, backgroundsToCss(backgrounds, nodeId));
   } else if (legacyBackground !== undefined && legacyBackground !== null) {
     style.background = legacyBackground;
   }
 
-  const play = mountPlay({ opacity, x, y, scale, rotate }, animateInitial);
+  const play = mountPlay({ opacity, x, y, scale, rotate }, animateInitial, nodeId);
 
   return (
     <motion.div
@@ -89,15 +96,10 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
  * untrusted value can reach inline CSS through this path (RC#11 by
  * construction). Exported for boundary testing.
  */
-export function resolveClipsContent(v: unknown): boolean {
+export function resolveClipsContent(v: unknown, nodeId?: string): boolean {
   if (v === undefined) return true;
   if (typeof v === "boolean") return v;
-  if (import.meta.env.DEV) {
-    console.warn(
-      '[lumencast] rejected value for "frame.clipsContent" : ' +
-        "not a boolean (value withheld per R9)",
-    );
-  }
+  emitDiagnostic(nodeId, "frame.clipsContent", "rejected value : not a boolean");
   return true;
 }
 

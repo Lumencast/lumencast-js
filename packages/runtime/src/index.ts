@@ -10,8 +10,21 @@ export type {
   LumencastTokenProvider,
   LumencastError,
   LumencastMetric,
+  LumencastDiagnostic,
   ErrorCode,
 } from "./types.js";
+
+// Anti-silent-drop diagnostics channel (ADR 001 §3.4, issue #34) —
+// hosts that render outside `mount()` (embedding the tree directly,
+// tooling, tests) can subscribe here ; `mount()` wires
+// `MountOptions.onDiagnostic` to the same channel.
+export {
+  addDiagnosticsHandler,
+  ANON_NODE_ID,
+  type RenderDiagnostic,
+  type DiagnosticHandler,
+} from "./render/diagnostics.js";
+export { PRIMITIVE_PROP_ALLOWLIST } from "./render/prop-allowlist.js";
 
 // Bundle types are useful for hosts that want to typecheck pre-compiled scenes.
 export type {

@@ -22,31 +22,30 @@
 
 import type { ReactElement } from "react";
 import type { PrimitiveProps } from "./index";
+import { emitDiagnostic } from "../diagnostics";
 
 const warned = new Set<string>();
 
-export function Instance({ resolved }: PrimitiveProps): ReactElement | null {
+export function Instance({ resolved, nodeId }: PrimitiveProps): ReactElement | null {
   const sceneId = resolved.scene_id as string | undefined;
   const sceneVersion = resolved.scene_version as string | undefined;
   if (!sceneId || !sceneVersion) {
-    if (import.meta.env.DEV) {
-      console.warn("[lumencast/instance] missing scene_id or scene_version", resolved);
-    }
+    // Structured diagnostic — never dump `resolved` (R9 : prop values,
+    // including bound params, must not transit a diagnostic channel).
+    emitDiagnostic(nodeId, "instance.scene_id", "missing scene_id or scene_version ; not rendered");
     return null;
   }
 
-  // One-time DEV warning per (sceneId,version) so authors know the
+  // One-time diagnostic per (sceneId,version) so authors know the
   // scaffold limitation.
-  if (import.meta.env.DEV) {
-    const key = `${sceneId}:${sceneVersion}`;
-    if (!warned.has(key)) {
-      warned.add(key);
-      console.warn(
-        `[lumencast/instance] scaffold render — async bundle fetch + ` +
-          `__params.* injection are not yet wired (LSML 1.1 §4.9). ` +
-          `scene_id=${sceneId}`,
-      );
-    }
+  const key = `${sceneId}:${sceneVersion}`;
+  if (!warned.has(key)) {
+    warned.add(key);
+    emitDiagnostic(
+      nodeId,
+      "instance",
+      "scaffold render — async bundle fetch + __params.* injection are not yet wired (LSML 1.1 §4.9)",
+    );
   }
 
   const size = resolved.size as { w?: number; h?: number } | undefined;

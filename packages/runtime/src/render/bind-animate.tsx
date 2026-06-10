@@ -43,6 +43,7 @@ import { toFramer, type FramerTransition, type Transition } from "../animate/tra
 import { createFrameCoalescer } from "../animate/frame-coalescer";
 import { clampFilterChannel, warnRejectedFilter } from "./filter-clamp";
 import { warnRejectedColor } from "./css-color";
+import { emitDiagnostic } from "./diagnostics";
 import { cssColorToRgba, mixRgba, serializeRgba, type Rgba } from "./color-interp";
 
 /** §6.5 colour-typed bindAnimate keys → the runtime prop name the
@@ -243,7 +244,7 @@ export function useBindAnimate(node: RenderNode, store: Store, scope: string): B
         // before interpolating ; never a raw string.
         const end = cssColorToRgba(value);
         if (end === null) {
-          warnRejectedColor(`bindAnimate.${key}`);
+          warnRejectedColor(`bindAnimate.${key}`, node.id);
           return;
         }
         const prev = colorState.get(key);
@@ -273,8 +274,8 @@ export function useBindAnimate(node: RenderNode, store: Store, scope: string): B
       const targets = resolveScalarTargets(key, value);
       if (targets === null) {
         // R9 — the offending value is never logged.
-        if (key.startsWith("filter.")) warnRejectedFilter(`bindAnimate.${key}`);
-        else warnRejectedBindValue(key);
+        if (key.startsWith("filter.")) warnRejectedFilter(`bindAnimate.${key}`, node.id);
+        else warnRejectedBindValue(key, node.id);
         return;
       }
       if (instant) {
@@ -359,12 +360,11 @@ export function useBindAnimate(node: RenderNode, store: Store, scope: string): B
 }
 
 /** R9 diagnostic — shape-invalid bindAnimate value (non-filter
- *  channels). DEV-only, value withheld. */
-function warnRejectedBindValue(key: string): void {
-  if (import.meta.env.DEV) {
-    console.warn(
-      `[lumencast] rejected bindAnimate value for "${key}" : ` +
-        "JSON shape does not match the property type (LSML §6.3, value withheld per R9)",
-    );
-  }
+ *  channels). Structured event, value withheld. */
+function warnRejectedBindValue(key: string, nodeId?: string): void {
+  emitDiagnostic(
+    nodeId,
+    `bindAnimate.${key}`,
+    "rejected bound value : JSON shape does not match the property type (LSML §6.3)",
+  );
 }

@@ -13,6 +13,8 @@ import { UniversalWrapper, type SizingMode } from "./universal-wrapper";
 import { KeyframePlayer } from "./keyframe-player";
 import { StaggerContext, computeStaggerDelayMs } from "./stagger-context";
 import { useBindAnimate } from "./bind-animate";
+import { checkNodeProps } from "./prop-allowlist";
+import { emitDiagnostic } from "./diagnostics";
 
 export interface TreeProps {
   node: RenderNode;
@@ -51,11 +53,15 @@ function Node({ node, store }: TreeProps): ReactNode {
   // colour strings.
   const bindAnimate = useBindAnimate(node, store, scope);
 
+  // ADR 001 §3.4 (issue #34) — audit static props + binding keys
+  // against the primitive's allowlist ; unknown props diagnose instead
+  // of dropping silently. Key sets are static per node (a live delta
+  // can only change values), so the check is once-per-node.
+  checkNodeProps(node);
+
   const Primitive = PRIMITIVES[node.kind as keyof typeof PRIMITIVES];
   if (!Primitive) {
-    if (import.meta.env.DEV) {
-      console.warn(`[lumencast] unknown render kind : ${node.kind}`);
-    }
+    emitDiagnostic(node.id, "kind", "unknown render kind ; node not rendered");
     return null;
   }
 
@@ -107,6 +113,7 @@ function Node({ node, store }: TreeProps): ReactNode {
     <UniversalWrapper {...universal}>
       <Primitive
         resolved={resolvedWithColors}
+        nodeId={node.id}
         transitionFor={transitionFor}
         animateInitial={node.animate_initial}
       >
@@ -132,7 +139,7 @@ function Node({ node, store }: TreeProps): ReactNode {
   // ambient stagger delay from StaggerContext (§6.7).
   if (node.keyframes) {
     return (
-      <KeyframePlayer keyframes={node.keyframes} store={store}>
+      <KeyframePlayer keyframes={node.keyframes} store={store} nodeId={node.id}>
         {body}
       </KeyframePlayer>
     );
@@ -152,6 +159,7 @@ function extractSizing(value: unknown): { x?: SizingMode; y?: SizingMode } | und
 function Repeat({ node, store }: TreeProps): ReactNode {
   useSignals();
   const scope = usePathScope();
+  checkNodeProps(node);
 
   const itemsBinding = node.bindings?.items;
   const items =

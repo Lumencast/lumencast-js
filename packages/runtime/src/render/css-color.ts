@@ -28,6 +28,8 @@
 //    total work is O(64) per value regardless of payload shape.
 // ─────────────────────────────────────────────────────────────────────
 
+import { emitDiagnostic } from "./diagnostics";
+
 const MAX_LEN = 64;
 
 // Single-pass charset allowlist. Only characters that can appear in
@@ -130,15 +132,14 @@ export function parseCssColor(value: unknown): string | null {
 
 /**
  * Diagnostic for a rejected value. Bastion R9 (ADR 001 §5.1) : the
- * rejected VALUE is never logged nor forwarded — only the field name
- * and a static reason. DEV-only, consistent with the existing
- * tree.tsx diagnostics (no logs in `broadcast` builds).
+ * rejected VALUE is never logged nor forwarded — only `node.id` (RC#7,
+ * issue #34), the field name and a static reason. Routed through the
+ * structured diagnostics channel (events, no logs in `broadcast`).
  */
-export function warnRejectedColor(field: string): void {
-  if (import.meta.env.DEV) {
-    console.warn(
-      `[lumencast] rejected unsafe colour for "${field}" : ` +
-        "not a strict hex/rgb()/hsl()/named colour (value withheld per R9)",
-    );
-  }
+export function warnRejectedColor(field: string, nodeId?: string): void {
+  emitDiagnostic(
+    nodeId,
+    field,
+    "rejected unsafe colour : not a strict hex/rgb()/hsl()/named colour",
+  );
 }

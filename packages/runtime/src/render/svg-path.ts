@@ -28,6 +28,8 @@
 //    tessellate, independently of string length.
 // ─────────────────────────────────────────────────────────────────────
 
+import { emitDiagnostic } from "./diagnostics";
+
 /** RC#10 — hard cap : 8 KiB per subpath `d` string. */
 export const MAX_SUBPATH_LEN = 8192;
 /**
@@ -148,7 +150,7 @@ export interface SubPath {
  * Every rejected or unrendered field emits a diagnostic (ADR 001 §3.4,
  * anti-silent-drop) that NEVER contains the value (R9).
  */
-export function parseShapePaths(resolved: Record<string, unknown>): SubPath[] {
+export function parseShapePaths(resolved: Record<string, unknown>, nodeId?: string): SubPath[] {
   const rawPaths = resolved.paths;
   const rawPathData = resolved.pathData;
 
@@ -156,12 +158,12 @@ export function parseShapePaths(resolved: Record<string, unknown>): SubPath[] {
     if (rawPathData !== undefined) {
       // Spec §4.6 : mutually exclusive. Tolerate with paths[] winning
       // (mirrors the fills[]/fill precedence), but never silently.
-      warnPath("shape.pathData", "mutually exclusive with paths[] ; paths[] wins");
+      warnPath(nodeId, "shape.pathData", "mutually exclusive with paths[] ; paths[] wins");
     }
     const out: SubPath[] = [];
     for (let idx = 0; idx < rawPaths.length; idx++) {
       if (out.length >= MAX_SUBPATHS) {
-        warnPath("shape.paths", "subpath cap exceeded ; remaining entries dropped");
+        warnPath(nodeId, "shape.paths", "subpath cap exceeded ; remaining entries dropped");
         break;
       }
       const entry = rawPaths[idx] as { data?: unknown; windingRule?: unknown } | null;
@@ -169,13 +171,13 @@ export function parseShapePaths(resolved: Record<string, unknown>): SubPath[] {
         typeof entry === "object" && entry !== null ? entry.data : undefined,
       );
       if (d === null) {
-        warnPath("shape.paths.data", "not a strict SVG path grammar (allowlist/caps)");
+        warnPath(nodeId, "shape.paths.data", "not a strict SVG path grammar (allowlist/caps)");
         continue;
       }
-      out.push({ d, fillRule: toFillRule(entry?.windingRule) });
+      out.push({ d, fillRule: toFillRule(entry?.windingRule, nodeId) });
     }
     if (out.length === 0 && rawPaths.length > 0) {
-      warnPath("shape.paths", "no renderable subpath ; shape geometry omitted");
+      warnPath(nodeId, "shape.paths", "no renderable subpath ; shape geometry omitted");
     }
     return out;
   }
@@ -183,7 +185,7 @@ export function parseShapePaths(resolved: Record<string, unknown>): SubPath[] {
   if (rawPathData !== undefined) {
     const d = validatePathData(rawPathData);
     if (d === null) {
-      warnPath("shape.pathData", "not a strict SVG path grammar (allowlist/caps)");
+      warnPath(nodeId, "shape.pathData", "not a strict SVG path grammar (allowlist/caps)");
       return [];
     }
     return [{ d, fillRule: "nonzero" }];
@@ -191,25 +193,23 @@ export function parseShapePaths(resolved: Record<string, unknown>): SubPath[] {
 
   // geometry:"path" with neither prop — spec'd field combination we
   // cannot render. Diagnostic, never a silent no-op (ADR 001 §3.4).
-  warnPath("shape.paths", "geometry is path but neither pathData nor paths[] is present");
+  warnPath(nodeId, "shape.paths", "geometry is path but neither pathData nor paths[] is present");
   return [];
 }
 
-function toFillRule(windingRule: unknown): "nonzero" | "evenodd" {
+function toFillRule(windingRule: unknown, nodeId?: string): "nonzero" | "evenodd" {
   if (windingRule === undefined || windingRule === "NONZERO") return "nonzero";
   if (windingRule === "EVENODD") return "evenodd";
-  warnPath("shape.paths.windingRule", "unknown winding rule ; defaulting to nonzero");
+  warnPath(nodeId, "shape.paths.windingRule", "unknown winding rule ; defaulting to nonzero");
   return "nonzero";
 }
 
 /**
  * Diagnostic for a rejected / unrendered path field. Bastion R9
  * (ADR 001 §5.1) : the rejected VALUE is never logged nor forwarded —
- * only the field name and a static reason. DEV-only, consistent with
- * css-color.ts (no logs in `broadcast` builds).
+ * only `node.id` (RC#7, issue #34), the field name and a static reason.
+ * Routed through the structured diagnostics channel.
  */
-function warnPath(field: string, reason: string): void {
-  if (import.meta.env.DEV) {
-    console.warn(`[lumencast] shape path "${field}" : ${reason} (value withheld per R9)`);
-  }
+function warnPath(nodeId: string | undefined, field: string, reason: string): void {
+  emitDiagnostic(nodeId, field, reason);
 }

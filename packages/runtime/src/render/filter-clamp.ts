@@ -22,6 +22,8 @@
 // rejected before the regex runs.
 // ─────────────────────────────────────────────────────────────────────
 
+import { emitDiagnostic } from "./diagnostics";
+
 /** Max CSS `blur()` radius accepted at runtime, in px (mirror of the
  *  compiler cap — see issue #41). */
 export const MAX_FILTER_BLUR_PX = 100;
@@ -84,14 +86,14 @@ export function sanitizeCssFilterString(value: unknown): string | null {
 
 /**
  * Diagnostic for a rejected filter value. Bastion R9 (ADR 001 §5.1) :
- * the rejected VALUE is never logged nor forwarded — only the field
- * name and a static reason. DEV-only (no logs in `broadcast` builds).
+ * the rejected VALUE is never logged nor forwarded — only `node.id`
+ * (RC#7, issue #34), the field name and a static reason. Routed through
+ * the structured diagnostics channel (events, no logs in `broadcast`).
  */
-export function warnRejectedFilter(field: string): void {
-  if (import.meta.env.DEV) {
-    console.warn(
-      `[lumencast] rejected unsafe filter value for "${field}" : ` +
-        "outside the R8 caps or not a finite number >= 0 (value withheld per R9)",
-    );
-  }
+export function warnRejectedFilter(field: string, nodeId?: string): void {
+  emitDiagnostic(
+    nodeId,
+    field,
+    "rejected unsafe filter value : outside the R8 caps or not a finite number >= 0",
+  );
 }

@@ -11,6 +11,7 @@
 
 import type { CSSProperties, ReactElement } from "react";
 import { parseCssColor, warnRejectedColor } from "./css-color";
+import { emitDiagnostic } from "./diagnostics";
 
 export interface FillStop {
   offset: number;
@@ -109,15 +110,15 @@ export function renderFill(fill: Fill): FillRenderResult {
 /** Compile an array of Fill into a CSS `background-image` value usable
  * on a `<div>` (frame backgrounds — non-SVG context). Returns the CSS
  * string + opacity. Stops use percentages in CSS gradient syntax. */
-export function backgroundsToCss(fills: Fill[]): CSSProperties {
+export function backgroundsToCss(fills: Fill[], nodeId?: string): CSSProperties {
   // Per §4.12, fills[0] renders on top — CSS background-image stacks
   // first → top-most. Match by passing in the same order.
-  const layers = fills.map(fillToCss).filter(Boolean) as string[];
+  const layers = fills.map((f) => fillToCss(f, nodeId)).filter(Boolean) as string[];
   if (layers.length === 0) return {};
   return { backgroundImage: layers.join(", ") };
 }
 
-function fillToCss(fill: Fill): string | null {
+function fillToCss(fill: Fill, nodeId?: string): string | null {
   // RC#11 — every colour interpolated into an inline CSS string MUST
   // pass the strict parser first (fills/stops arrive from untrusted
   // bundles AND live LSDP deltas). A rejected colour drops the whole
@@ -125,7 +126,7 @@ function fillToCss(fill: Fill): string | null {
   if (fill.kind === "solid") {
     const color = parseCssColor(fill.color);
     if (color === null) {
-      warnRejectedColor("fill.color");
+      warnRejectedColor("fill.color", nodeId);
       return null;
     }
     // Wrap solid in linear-gradient so it can stack with other layers.
@@ -135,7 +136,7 @@ function fillToCss(fill: Fill): string | null {
   for (const s of fill.stops) {
     const color = parseCssColor(s.color);
     if (color === null) {
-      warnRejectedColor("fill.stops.color");
+      warnRejectedColor("fill.stops.color", nodeId);
       return null;
     }
     const c = s.opacity !== undefined ? cssWithOpacity(color, s.opacity) : color;
@@ -176,13 +177,13 @@ function cssWithOpacity(color: string, opacity: number): string {
  * whose solid colour — or ANY gradient stop colour — is rejected drops
  * the whole layer with a diagnostic : never passthrough, never a
  * half-built gradient. Returned fills carry canonicalised colours. */
-export function sanitizeFills(fills: Fill[], field: string): Fill[] {
+export function sanitizeFills(fills: Fill[], field: string, nodeId?: string): Fill[] {
   const out: Fill[] = [];
   for (const fill of fills) {
     if (fill.kind === "solid") {
       const color = parseCssColor(fill.color);
       if (color === null) {
-        warnRejectedColor(`${field}.color`);
+        warnRejectedColor(`${field}.color`, nodeId);
         continue;
       }
       out.push({ ...fill, color });
@@ -193,7 +194,7 @@ export function sanitizeFills(fills: Fill[], field: string): Fill[] {
     for (const s of fill.stops ?? []) {
       const color = parseCssColor(s.color);
       if (color === null) {
-        warnRejectedColor(`${field}.stops.color`);
+        warnRejectedColor(`${field}.stops.color`, nodeId);
         rejected = true;
         break;
       }
@@ -205,9 +206,24 @@ export function sanitizeFills(fills: Fill[], field: string): Fill[] {
   return out;
 }
 
-/** Coerce loose JSON into a Fill array. Returns [] for non-arrays. */
-export function parseFills(value: unknown): Fill[] {
+/** Coerce loose JSON into a Fill array. Returns [] for non-arrays.
+ * A structurally-valid fill entry whose `kind` is not renderable by
+ * this runtime (e.g. `angular-gradient` / `diamond-gradient`, promoted
+ * to core by the LSML 1.2 RFC) is dropped WITH a diagnostic — never
+ * silently (ADR 001 §3.4, issue #34). */
+export function parseFills(value: unknown, field?: string, nodeId?: string): Fill[] {
   if (!Array.isArray(value)) return [];
+  if (field !== undefined) {
+    for (const v of value) {
+      if (!isFill(v)) {
+        emitDiagnostic(
+          nodeId,
+          `${field}.kind`,
+          "fill kind is not renderable by this runtime ; layer dropped (angular/diamond gradients land with LSML 1.2)",
+        );
+      }
+    }
+  }
   return value.filter(isFill) as Fill[];
 }
 

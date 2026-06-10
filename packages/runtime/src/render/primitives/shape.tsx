@@ -26,34 +26,41 @@ interface StrokeSpec {
  *  `validatePathData` — at EVERY render, because props are wire-
  *  drivable live via LSDP deltas (`resolveProps`, tree.tsx).
  */
-export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProps) {
+export function Shape({ resolved, nodeId, transitionFor, animateInitial }: PrimitiveProps) {
   // Canonical prop name is `geometry` (LSML §4.6 — what the compiler
   // emits) ; `kind` is kept as a fallback for hand-rolled Solar-lineage
   // RenderNodes that predate the compiler.
   const kind =
     (resolved.geometry as string | undefined) ?? (resolved.kind as string | undefined) ?? "rect";
-  const legacyFill = safeColor(resolved.fill, "shape.fill") ?? "transparent";
-  const legacyStroke = safeColor(resolved.stroke, "shape.stroke") ?? "transparent";
+  const legacyFill = safeColor(resolved.fill, "shape.fill", nodeId) ?? "transparent";
+  const legacyStroke = safeColor(resolved.stroke, "shape.stroke", nodeId) ?? "transparent";
   const legacyStrokeWidth = numberOr(resolved.stroke_width, 0);
   const width = numberOr(resolved.width, 100);
   const height = numberOr(resolved.height, 100);
   const radius = numberOr(resolved.radius, 0);
   const opacity = numberOr(resolved.opacity, 1);
+  // LSML §4.6 `ariaLabel` was silently unrendered until issue #34's
+  // allowlist audit surfaced it — now forwarded as the SVG label.
+  const ariaLabel = typeof resolved.ariaLabel === "string" ? resolved.ariaLabel : undefined;
 
   const tx = resolveTransition(transitionFor, ["opacity"], animateInitial);
   const transition = toFramer(tx);
-  const play = mountPlay({ opacity }, animateInitial);
+  const play = mountPlay({ opacity }, animateInitial, nodeId);
 
   // LSML 1.1 §4.6 — `fills[]` is the preferred multi-fill form. Fall
   // back to the singular `fill` for 1.0 bundles. Colours are strict-
   // validated (a rejected colour drops its layer, with diagnostic).
-  const fills = sanitizeFills(parseFills(resolved.fills), "shape.fills");
+  const fills = sanitizeFills(
+    parseFills(resolved.fills, "shape.fills", nodeId),
+    "shape.fills",
+    nodeId,
+  );
   const strokes = parseStrokes(resolved.strokes);
 
   // LSML 1.1 §4.6 — `geometry:"path"` : validated subpaths, one
   // `<path>` element per entry (ADR 001 §3.2.3). Re-validated at every
   // render — see module header of svg-path.ts (RC#10).
-  const subpaths = kind === "path" ? parseShapePaths(resolved) : [];
+  const subpaths = kind === "path" ? parseShapePaths(resolved, nodeId) : [];
 
   // Each fill compiles to a (defs, ref) pair. We render the shape
   // outline once per fill, layered top-to-bottom (first entry → on
@@ -68,7 +75,7 @@ export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProp
   const strokeLayers =
     strokes.length > 0
       ? strokes.map((s) => ({
-          color: safeColor(s.color, "shape.strokes.color") ?? "transparent",
+          color: safeColor(s.color, "shape.strokes.color", nodeId) ?? "transparent",
           width: s.width ?? 0,
         }))
       : [{ color: legacyStroke, width: legacyStrokeWidth }];
@@ -156,6 +163,7 @@ export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProp
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
+      {...(ariaLabel !== undefined ? { "aria-label": ariaLabel, role: "img" } : {})}
       initial={play.initial}
       animate={play.animate}
       transition={transition}
@@ -174,10 +182,10 @@ export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProp
  * sites too once values are wire-drivable). Non-strings resolve to
  * null silently (absent prop) ; a string that fails the strict grammar
  * is rejected with a diagnostic (value withheld per R9). */
-function safeColor(value: unknown, field: string): string | null {
+function safeColor(value: unknown, field: string, nodeId?: string): string | null {
   if (typeof value !== "string") return null;
   const color = parseCssColor(value);
-  if (color === null) warnRejectedColor(field);
+  if (color === null) warnRejectedColor(field, nodeId);
   return color;
 }
 

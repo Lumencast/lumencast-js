@@ -33,11 +33,26 @@ import type {
   LSMLText,
 } from "./lsml-types.js";
 
+/** Structured compile diagnostic (ADR 001 §3.4, issue #34). Per
+ *  Bastion R9 it carries node identity + field + static reason and
+ *  NEVER the offending value. */
+export interface CompileDiagnostic {
+  /** `node.id` of the owning node, `"<anon>"` when absent, or
+   *  `"<bundle>"` for bundle-level fields. */
+  nodeId: string;
+  /** Field name (e.g. `effects`, `style.textShadow`, `keyframes.steps[0].filter.blur`). */
+  field: string;
+  /** Static reason — why the field warns. Never includes the value. */
+  reason: string;
+}
+
 export interface CompileOptions {
-  /** When true, throws on any unrecognized LSML extension. Default false (warn-only). */
+  /** When true, throws on any warning — unrecognized LSML extension,
+   *  spec'd-but-not-lowered field, clamped value. Default false (warn-only). */
   strict?: boolean;
-  /** Optional warn collector — receives each warning string. */
-  onWarn?: (message: string) => void;
+  /** Optional warn collector — receives the formatted message plus the
+   *  structured diagnostic (additive second argument, issue #34). */
+  onWarn?: (message: string, diagnostic: CompileDiagnostic) => void;
 }
 
 const SUPPORTED_VERSIONS = new Set(["1.0", "1.1"] as const);
@@ -74,9 +89,10 @@ function warn(
   field: string,
   reason: string,
 ): void {
-  const message = `compiler: node "${nodeId ?? "<anon>"}": field "${field}" ${reason}`;
+  const diagnostic: CompileDiagnostic = { nodeId: nodeId ?? "<anon>", field, reason };
+  const message = `compiler: node "${diagnostic.nodeId}": field "${field}" ${reason}`;
   if (opts.strict) throw new Error(message);
-  opts.onWarn?.(message);
+  opts.onWarn?.(message, diagnostic);
 }
 
 /** Hard compile error — invalid value. Per R9 the message names the node
@@ -85,12 +101,130 @@ function invalid(nodeId: string | undefined, field: string, reason: string): Err
   return new Error(`compiler: node "${nodeId ?? "<anon>"}": field "${field}" ${reason}`);
 }
 
+// --- consumed-key accounting (ADR 001 §3.4 D4, issue #34) --------------
+//
+// Every key present on a source node (or the bundle) and NOT consumed by
+// the lowering below produces an `onWarn` diagnostic — whether the key is
+// spec'd-but-unsupported or an unknown extension. `strict: true` turns
+// every warning into a throw. Exemptions (advisory by construction,
+// §17.5.1) : `metadata` blocks at every level ; authoring profiles are
+// forwarded verbatim, never key-audited.
+//
+// The sets below mirror EXACTLY what `compileNode` / `compileRepeat` /
+// `mapTextStyle` read. When extending the lowering, add the new key here
+// in the same change — a forgotten entry shows up as a spurious warning
+// in the fixture suite, never as a silent drop.
+
+/** Advisory, never audited (LSML §17.4 / §17.5.1). */
+const EXEMPT_KEYS = new Set(["metadata"]);
+
+/** Keys the common (non-repeat) lowering path consumes on every node. */
+const COMMON_NODE_KEYS: ReadonlySet<string> = new Set([
+  "kind",
+  "id",
+  "bind",
+  "bindStyle",
+  "bindUniversal",
+  "bindAnimate",
+  "animate",
+  "keyframes",
+  "children",
+  "visible",
+  "opacity",
+  "rotation",
+  "sizing",
+  "position",
+]);
+
+/** Keys `compileRepeat` consumes. `scope` names the iteration scope the
+ *  template's bind paths reference — declarative, no lowering needed. */
+const REPEAT_NODE_KEYS: ReadonlySet<string> = new Set([
+  "kind",
+  "id",
+  "bind",
+  "scope",
+  "template",
+  "stagger_ms",
+]);
+
+/** Per-kind keys consumed by the `switch` in `compileNode`. */
+const KIND_NODE_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
+  stack: new Set(["direction", "gap", "align", "justify", "padding", "rtl"]),
+  grid: new Set(["columns", "rows", "gap", "padding"]),
+  frame: new Set(["size", "position", "background", "backgrounds", "clipsContent"]),
+  text: new Set(["style", "format", "maxLines"]),
+  image: new Set(["alt", "size", "fit"]),
+  shape: new Set([
+    "geometry",
+    "size",
+    "pathData",
+    "paths",
+    "fill",
+    "fills",
+    "stroke",
+    "strokes",
+    "cornerRadius",
+    "ariaLabel",
+  ]),
+  media: new Set(["kind_hint", "controls", "autoplay", "muted", "loop", "size"]),
+  instance: new Set(["scene_id", "scene_version", "size", "fit", "params", "bindParams"]),
+};
+
+/** Keys `mapTextStyle` consumes inside `text.style`. */
+const TEXT_STYLE_KEYS: ReadonlySet<string> = new Set([
+  "fontSize",
+  "fontFamily",
+  "fontWeight",
+  "color",
+  "textAlign",
+  "lineHeight",
+  "letterSpacing",
+  "textTransform",
+  "textDecoration",
+  "fontStyle",
+]);
+
+/** Keys `compileBundle` consumes at the bundle level. */
+const BUNDLE_KEYS: ReadonlySet<string> = new Set([
+  "lsml",
+  "$schema",
+  "scene_id",
+  "scene_version",
+  "profiles",
+  "layout",
+  "operator_inputs",
+  "external_adapters",
+]);
+
+const NOT_LOWERED =
+  "is not lowered by this compiler ; without this diagnostic the field would drop silently (ADR 001 §3.4)";
+
+/** Diff a node's present keys against the consumed sets. */
+function auditNodeKeys(node: LSMLNode, opts: CompileOptions): void {
+  const allowed = node.kind === "repeat" ? REPEAT_NODE_KEYS : COMMON_NODE_KEYS;
+  const kindKeys = node.kind === "repeat" ? undefined : KIND_NODE_KEYS[node.kind];
+  for (const key of Object.keys(node)) {
+    if (EXEMPT_KEYS.has(key) || allowed.has(key) || kindKeys?.has(key)) continue;
+    warn(opts, node.id, key, NOT_LOWERED);
+  }
+}
+
+/** Diff bundle-level keys (`defaults`, `assets`, `i18n` and unknown
+ *  extensions warn today — none of them lands in the RenderBundle). */
+function auditBundleKeys(lsml: LSMLBundle, opts: CompileOptions): void {
+  for (const key of Object.keys(lsml)) {
+    if (EXEMPT_KEYS.has(key) || BUNDLE_KEYS.has(key)) continue;
+    warn(opts, "<bundle>", key, NOT_LOWERED);
+  }
+}
+
 export function compileBundle(lsml: LSMLBundle, options: CompileOptions = {}): RenderBundle {
   if (!SUPPORTED_VERSIONS.has(lsml.lsml as "1.0" | "1.1")) {
     throw new Error(
       `compiler: LSML version "${lsml.lsml}" is not supported (supported: ${[...SUPPORTED_VERSIONS].join(", ")})`,
     );
   }
+  auditBundleKeys(lsml, options);
   return {
     scene_version: lsml.scene_version,
     root: compileNode(lsml.layout, options),
@@ -121,6 +255,11 @@ export function compileBundle(lsml: LSMLBundle, options: CompileOptions = {}): R
 }
 
 function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
+  // ADR 001 §3.4 (issue #34) — every present key must be consumed by the
+  // lowering below, exempt (`metadata`), or diagnosed. Runs for repeat
+  // nodes too (their consumed set differs).
+  auditNodeKeys(node, opts);
+
   if (node.kind === "repeat") {
     return compileRepeat(node, opts);
   }
@@ -171,7 +310,7 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
       break;
 
     case "text":
-      mapTextStyle(node, props);
+      mapTextStyle(node, props, opts);
       if (node.format !== undefined) props["format"] = node.format;
       if (node.maxLines !== undefined) props["maxLines"] = node.maxLines;
       break;
@@ -693,9 +832,14 @@ function compileRepeat(node: LSMLRepeat, opts: CompileOptions): RenderNode {
   return out;
 }
 
-function mapTextStyle(node: LSMLText, props: Record<string, unknown>): void {
+function mapTextStyle(node: LSMLText, props: Record<string, unknown>, opts: CompileOptions): void {
   if (!node.style) return;
   const s = node.style;
+  // Nested consumed-key accounting (issue #34) : a `style.*` key outside
+  // the TextStyle grammar (e.g. `style.textShadow`) warns, never drops.
+  for (const key of Object.keys(s)) {
+    if (!TEXT_STYLE_KEYS.has(key)) warn(opts, node.id, `style.${key}`, NOT_LOWERED);
+  }
   // Solar's Text primitive consumes size/weight/colour (UK), not CSS-style names.
   if (s.fontSize !== undefined) props["size"] = s.fontSize;
   if (s.fontFamily !== undefined) props["font"] = s.fontFamily;
