@@ -16,7 +16,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { Tree } from "../../src/render/tree.js";
 import { resolveClipsContent } from "../../src/render/primitives/frame.js";
-import { createStore, type Store } from "../../src/state/store.js";
+import { createStore } from "../../src/state/store.js";
 import type { RenderNode } from "../../src/render/bundle.js";
 import { vi } from "vitest";
 
@@ -75,7 +75,6 @@ describe("resolveClipsContent unit — hostiles not in Forge it.each", () => {
     // A JSON-transmitted `false` is a JS boolean, but a badly-typed
     // middleware may box it into new Boolean(false). The object is truthy
     // yet not `typeof boolean` — it must be rejected like any other junk.
-    // eslint-disable-next-line no-new-wrappers
     expect(resolveClipsContent(new Boolean(false))).toBe(true);
   });
 
@@ -96,7 +95,6 @@ describe("resolveClipsContent unit — hostiles not in Forge it.each", () => {
 
 describe("clipsContent hostile DOM render — values not in Forge it.each", () => {
   it("new Boolean(false) → R9 diagnostic + fallback clipped in DOM", async () => {
-    // eslint-disable-next-line no-new-wrappers
     const div = await renderFrame({ clipsContent: new Boolean(false) });
     expect(div.style.overflow).toBe("hidden");
     const calls = warnSpy.mock.calls.flat().map(String);
