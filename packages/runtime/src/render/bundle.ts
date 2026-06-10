@@ -102,9 +102,11 @@ export interface RenderBundle {
   external_adapters?: ExternalAdapter[];
   assets?: Asset[];
   /** LSML 1.1 §17.3 — capability profiles required for correct rendering.
-   * Each entry is a `<vendor>.<name>-<version>` string. The runtime
-   * checks every entry against its supported list ; an unrecognised
-   * profile raises BUNDLE_INCOMPATIBLE per §17.3.1. */
+   * Each entry is an `x-<vendor>.<name>/<version>` string. The runtime
+   * checks every behavioural entry against its supported list ; an
+   * unrecognised behavioural profile raises BUNDLE_INCOMPATIBLE per
+   * §17.3.1. Authoring profiles (`x-<vendor>.authoring/<major>`, §17.5.1)
+   * are advisory : ignored at render time, never a rejection cause. */
   profiles?: string[];
 }
 
@@ -123,6 +125,44 @@ export const SUPPORTED_PROFILES: ReadonlySet<string> = new Set<string>([
   "x-lumencast.color-srgb-1.0",
 ]);
 
+// LSML 1.1 §17.5.1 + ADR 001 RC#14 — authoring-profile detection.
+//
+// An authoring profile is advisory : a runtime that does not support it
+// MUST NOT reject the bundle and renders the underlying primitives as if
+// the profile were absent. Detection matches the COMPLETE identifier form
+// `x-<vendor>.authoring/<major>` :
+//
+//   - `x-` prefix, then one or more lowercase name segments separated by
+//     dots, where `.authoring` is the EXACT TERMINAL segment before `/` ;
+//   - `<major>` is a bare integer (no `.minor`) ;
+//   - never a substring test : a behavioural profile whose name merely
+//     *contains* `.authoring` in a non-terminal position is NOT exempted
+//     and keeps §17.3.1 hard-rejection semantics.
+//
+// Anti-ReDoS note : both regexes below are anchored and unambiguous —
+// the character classes exclude the `.` and `/` separators, so there is
+// exactly one possible parse per input (linear time, no backtracking).
+const AUTHORING_NAME_RE = /^x-[a-z0-9-]+(?:\.[a-z0-9-]+)*$/;
+const AUTHORING_MAJOR_RE = /^(?:0|[1-9][0-9]*)$/;
+const AUTHORING_SUFFIX = ".authoring";
+
+/** True when `id` has the complete authoring-profile form
+ * `x-<vendor>.authoring/<major>` (LSML 1.1 §17.5.1, ADR 001 RC#14).
+ * Such profiles are advisory : ignored at render time, never rejected. */
+export function isAuthoringProfile(id: string): boolean {
+  const slash = id.indexOf("/");
+  if (slash < 0) return false;
+  const name = id.slice(0, slash);
+  const major = id.slice(slash + 1);
+  if (!AUTHORING_MAJOR_RE.test(major)) return false;
+  if (!name.endsWith(AUTHORING_SUFFIX)) return false;
+  // `name` minus the terminal `.authoring` segment must still be a valid
+  // `x-<vendor>[.<segment>...]` prefix — this is what makes `.authoring`
+  // a real terminal segment rather than a substring of another one
+  // (e.g. `x-evilauthoring/1` or `x-evil.authoring.fx/1` do not match).
+  return AUTHORING_NAME_RE.test(name.slice(0, -AUTHORING_SUFFIX.length));
+}
+
 export class BundleIncompatibleError extends Error {
   public readonly code = "BUNDLE_INCOMPATIBLE" as const;
   public readonly unsupportedProfiles: string[];
@@ -139,14 +179,19 @@ export class BundleIncompatibleError extends Error {
 
 /** Validate a bundle's `profiles[]` against the runtime's supported
  * set. Throws `BundleIncompatibleError` listing every offending entry
- * when at least one is not supported. */
+ * when at least one behavioural profile is not supported.
+ *
+ * Authoring profiles (`x-<vendor>.authoring/<major>`, LSML 1.1 §17.5.1)
+ * are advisory and skipped : their absence from the supported set is
+ * never a rejection cause. Every other (behavioural) unsupported profile
+ * keeps the hard §17.3.1 `BUNDLE_INCOMPATIBLE` rejection. */
 export function validateBundleProfiles(
   bundle: { profiles?: string[] },
   supported: ReadonlySet<string> = SUPPORTED_PROFILES,
 ): void {
   const profiles = bundle.profiles;
   if (!profiles || profiles.length === 0) return;
-  const missing = profiles.filter((p) => !supported.has(p));
+  const missing = profiles.filter((p) => !isAuthoringProfile(p) && !supported.has(p));
   if (missing.length > 0) {
     throw new BundleIncompatibleError(missing);
   }

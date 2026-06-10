@@ -22,3 +22,13 @@ export type {
   ExternalAdapter,
   Asset,
 } from "./render/bundle.js";
+
+// Profile gating (LSML 1.1 §17.3.1 / §17.5.1) — exported so hosts and the
+// compiler-side tooling can apply the same rule outside the fetch path, and
+// so the runtime "publishes the list of profiles it supports" per §17.3.1.
+export {
+  SUPPORTED_PROFILES,
+  BundleIncompatibleError,
+  isAuthoringProfile,
+  validateBundleProfiles,
+} from "./render/bundle.js";
