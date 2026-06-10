@@ -101,11 +101,17 @@ image filters) — advisory, jamais rendu.
 Dans `lumencast-js`, runtime React canonique + compiler :
 
 1. **Conformité profils §17.5.1** : `validateBundleProfiles` ignore (sans rejet) tout
-   identifiant contenant le segment `.authoring/` ; le compiler forwarde `profiles[]` dans le
-   `RenderBundle`.
+   identifiant dont la **forme complète** est `x-<vendor>.authoring/<major>` — `.authoring`
+   comme **segment terminal exact** du nom avant le `/<major>`, jamais un test substring
+   (`x-evil.authoring/1` advisory = ignoré ; un profil comportemental dont le nom contient
+   `.authoring` en position non terminale n'est **pas** exempté). Tout profil comportemental
+   non supporté reste un rejet **dur** `BUNDLE_INCOMPATIBLE`. Le compiler forwarde
+   `profiles[]` dans le `RenderBundle`.
 2. **Compiler 1.1 complet** : types et lowering pour `fills[]`/`strokes[]`, `paths[]`/
    `pathData`, `clipsContent`, `keyframes` + `stagger_ms`, `animate.filter` (mount-play et
    transitions), `scale` per-axis ; correction du mismatch `cornerRadius`→`radius`.
+   Les valeurs `filter` sont **clampées au lowering** (cap `blur`, cap `brightness` ≤ 4,
+   valeurs négatives rejetées) — exigence Bastion R8, non optionnelle.
 3. **Rendu path** : `shape.tsx` rend `geometry:"path"` via `<path d fill-rule>` (un élément
    par subpath, `windingRule` → `nonzero|evenodd`), viewBox depuis `size`.
 4. **Typo complète** : `text.tsx` rend `lineHeight`, `letterSpacing`, `textTransform`,
@@ -115,8 +121,12 @@ Dans `lumencast-js`, runtime React canonique + compiler :
 
 ### 3.3 D3 — Phase B : implémenter `bindAnimate` (§6.3) + interpolation couleur (§6.5)
 
-- Compiler : lowering de `bindAnimate` (validation : clés ⊆ propriétés animables §6.1) vers
-  un map `animateBindings` du `RenderNode`.
+- Compiler : lowering de `bindAnimate` vers un map `animateBindings` du `RenderNode`.
+  Validation **dure** : toute clé hors propriétés animables §6.1 → **throw au compile**
+  (pas un `onWarn`) — un `bindAnimate` malformé est une directive invalide, pas un champ
+  spec'd non supporté ; la politique warn-by-default §3.4 ne s'applique pas ici.
+- Runtime : **coalescing des deltas par frame** sur chaque binding (un retarget max par
+  rAF) — borne le coût d'un flux LSDP haute fréquence (1 kHz) indépendamment du producteur.
 - Runtime : par binding, souscription au signal leaf-grain existant → retarget d'une motion
   value Framer (tween ou spring §6.2, **avec `mass`** ajouté à `SpringTransition` et
   vélocité conservée au retarget). Aucun remount : interpolation continue vers la valeur live
@@ -138,6 +148,10 @@ Tout champ **spec'd** non honoré doit produire un diagnostic ; le drop muet dev
 - **Runtime** : chaque primitive déclare l'allowlist des props consommées ; prop présente et
   non consommée → diagnostic remonté par le canal `onError`/diagnostics (jamais de log en mode
   `broadcast`, conformément au CLAUDE.md — le diagnostic est un événement, pas un console.log).
+- **Hygiène des diagnostics (Bastion R9)** : un diagnostic anti-drop/`onWarn` n'inclut
+  **jamais** la valeur d'un leaf ni d'une prop — uniquement `node.id` + nom du champ +
+  raison. Les valeurs de leaves peuvent porter du contenu antenne sensible ; elles ne
+  transitent par aucun canal de diagnostic.
 - **Plugin Figma (suivi, hors périmètre immédiat)** : tant que LSML 1.2 n'est pas livrée, un
   export contenant angular/diamond gradient ou boolean op non-UNION doit afficher un warning
   d'export au lieu de dropper (issue de suivi sur `lumencast-figma`, après acceptation du RFC).
@@ -176,14 +190,38 @@ minor). C se livre après bump spec 1.2.
 | `bindAnimate` à haute fréquence de deltas → saturation retarget | moyen | spring velocity-carry (pas de remount) ; budget p95 ≤ 50 ms vérifié en E2E Playwright |
 | Blend modes / masques (1.2) créent des stacking contexts → coût compositing en CEF | moyen | perf trace E2E (0 layout event) ; clamp éventuel documenté dans le RFC |
 | Warnings anti-drop bruyants sur bundles existants | faible | défaut warn-only, strict opt-in ; exemption metadata/authoring |
-| Contenu non-trusté injecté dans le rendu (`pathData` SVG, couleurs CSS, dash patterns) | à auditer | clearance **Bastion** requise — voir surface ci-dessous |
+| Contenu non-trusté injecté dans le rendu (`pathData` SVG, couleurs CSS, dash patterns) | élevé | traité par construction : RC#10–RC#14 (threat model Bastion 2026-06-10) |
 | RFC 1.2 retardé → Phase C glisse | faible | Phases A+B livrent ~70 % de la valeur sans spec change |
 | Divergence multi-SDK (go/rs/py/svelte/vue) | accepté temporairement | listée dans le RFC ; runtime React = référence de conformance |
 
-**Surface sécurité (pour Bastion)** : `pathData`/`paths[].data` (strings SVG `d` non-trustées
-rendues en attribut — valider grammaire/longueur, pas de `url()`), valeurs couleur/filter
-injectées en CSS inline (pas d'interpolation de chaînes arbitraires hors parse strict),
-complexité de parse bornée (anti-ReDoS), aucun nouvel accès réseau, aucun secret.
+**Surface sécurité** : `pathData`/`paths[].data` (strings SVG `d` non-trustées rendues en
+attribut), valeurs couleur/filter injectées en CSS inline, complexité de parse bornée
+(anti-ReDoS), aucun nouvel accès réseau, aucun secret. Threat model Bastion rendu le
+2026-06-10 (clearance conditionnée aux RC#10–RC#14 ci-dessous et aux acceptations §5.1) —
+révision intégrée dans cette version de l'ADR.
+
+### 5.1 Acceptations de risque écrites (threat model Bastion 2026-06-10)
+
+- **R6 — Intégrité des bundles `.lsmlz` et chemin `preload()`** : le runtime ne vérifie
+  aucun hash sur les bundles chargés, et `preload()`
+  (`packages/runtime/src/render/bundle.ts:186-192`) injecte un `RenderBundle` directement
+  dans le cache après la seule validation de profils. **Accepté hors périmètre runtime** :
+  l'intégrité de livraison (hash/signature, anti zip-bomb à la décompression) appartient à
+  la couche hôte/serving. **Porteur nommé : Keeper** (infra de serving des bundles —
+  gateway/CDN/caps de décompression) ; **Conduit** est saisi si un champ d'intégrité doit
+  entrer dans le contrat LSDP. `preload()` est documenté comme **chemin trusté uniquement** :
+  réservé à un hôte qui a déjà établi la provenance du bundle ; jamais alimenté par une
+  entrée réseau non vérifiée.
+- **R7 — Fetch des `instance` imbriquées** : le scaffold actuel ne fetch pas
+  (`packages/runtime/src/render/primitives/instance.tsx:17-21` — depth-8 et détection de
+  cycle §4.9.2 explicitement non implémentés). L'activation du fetch d'inner bundles est
+  **gated** : interdite tant que la limite depth-8 ET la détection de cycle §4.9.2 ne sont
+  pas implémentées au resolver, et soumise à **re-clearance Bastion** à ce moment-là.
+- **R8 — Clamp dur des valeurs `filter` au lowering** : cap `blur`, cap `brightness` ≤ 4,
+  valeurs négatives rejetées (cf. §3.2.2). Non optionnel — un `filter` non borné est un
+  DoS compositing en CEF.
+- **R9 — Hygiène des diagnostics** : aucun diagnostic anti-drop/`onWarn` n'inclut la valeur
+  d'un leaf ou d'une prop — seulement `node.id` + champ + raison (cf. §3.4).
 
 ## 6. Resolution criteria
 
@@ -212,3 +250,31 @@ Testables, tous mesurés en CI `lumencast-js` sauf mention :
 9. **RFC** : issue `[RFC] LSML 1.2` ouverte sur `lumencast-protocol` couvrant effects, blend
    modes, masques, per-corner radius, strokes avancés, angular/diamond gradients, gradient
    transform, avec analyse rétro-compat et liste des SDK impactés.
+10. **Paths adversariaux (Bastion)** : la grammaire du `d` SVG est **allowlistée**
+    (commandes `MmLlHhVvCcSsQqTtAaZz` + nombres uniquement) ; rejet de `url(`, `data:`,
+    `<`, `&` ; cap **8 KiB par subpath** + cap sur le nombre de subpaths et de commandes.
+    La validation s'applique **au compile ET au runtime** — les props sont pilotables live
+    via deltas LSDP (`resolveProps`, `packages/runtime/src/render/tree.tsx:166-175`), donc
+    la validation compile seule ne suffit pas. Fixture adversariale : `d` à 10⁶ commandes,
+    `d` contenant `url(...)`, `data:`, `<` → rejet/cap **sans freeze** du renderer.
+11. **CSS strict (Bastion)** : parser couleur **strict** (hex / `rgb()` / `hsl()` / named
+    canonique ; regex **ancrées** ; rejet de `url(`, `;`, `}`) appliqué à **toute** valeur
+    color/dash/filter rendue en CSS inline — y compris la **correction du code existant** :
+    `cssWithOpacity` (`packages/runtime/src/render/fill.tsx:140-151`, `color-mix(...)`
+    interpole aujourd'hui une chaîne non parsée), `legacyBackground`
+    (`packages/runtime/src/render/primitives/frame.tsx:49`) et `colour`
+    (`packages/runtime/src/render/primitives/text.tsx:14`). Testé via prop **statique** ET
+    via **delta live**.
+12. **Anti-ReDoS (Bastion)** : les parsers couleur et path sont en **temps linéaire**
+    (regex sans backtracking exponentiel / scanner manuel — justification écrite dans le
+    code), fuzz dédié en CI, borne **≤ 1 ms par valeur** parsée ; le budget p95 delta→DOM
+    ≤ 50 ms est tenu **aussi sous payload pathologique** (fixture RC#10 jouée en E2E).
+13. **bindAnimate anti-DoS (Bastion)** : clé `bindAnimate` hors propriétés animables §6.1
+    → **throw au compile** (pas un warn) ; le runtime **coalesce les deltas par frame**
+    (un retarget max par rAF et par binding) ; E2E : flux à **1 kHz** sur N leaves bindés →
+    p95 ≤ 50 ms tenu et **0 layout event**.
+14. **Profil authoring strict (Bastion)** : le matching `.authoring/` porte sur la forme
+    complète `x-<vendor>.authoring/<major>` (segment terminal exact, jamais substring).
+    Tests : `x-evil.authoring/1` (advisory, ignoré sans rejet) ET un profil comportemental
+    dont le nom contient `.authoring` en position **non terminale** (non exempté → rejet) ;
+    tout profil comportemental non supporté = **`BUNDLE_INCOMPATIBLE` dur**.
