@@ -284,6 +284,12 @@ function mapTextStyle(node: LSMLText, props: Record<string, unknown>): void {
   if (s.color !== undefined) props["colour"] = s.color;
   if (s.textAlign !== undefined) props["align"] = mapTextAlign(s.textAlign);
   if (s.lineHeight !== undefined) props["lineHeight"] = s.lineHeight;
+  // TextStyle 1.1 typography — same names runtime-side (text.tsx
+  // validates each value against the field's grammar before render).
+  if (s.letterSpacing !== undefined) props["letterSpacing"] = s.letterSpacing;
+  if (s.textTransform !== undefined) props["textTransform"] = s.textTransform;
+  if (s.textDecoration !== undefined) props["textDecoration"] = s.textDecoration;
+  if (s.fontStyle !== undefined) props["fontStyle"] = s.fontStyle;
 }
 
 function mapAlign(a: NonNullable<Extract<LSMLNode, { kind: "stack" }>["align"]>): string {
