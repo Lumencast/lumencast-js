@@ -2,21 +2,29 @@ import { motion } from "framer-motion";
 import type { ReactElement } from "react";
 import type { PrimitiveProps } from "./index";
 import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
-import { parseFills, renderFill } from "../fill";
+import { parseFills, renderFill, sanitizeFills } from "../fill";
+import { parseCssColor, warnRejectedColor } from "../css-color";
+import { parseShapePaths, type SubPath } from "../svg-path";
 
 interface StrokeSpec {
   color?: string;
   width?: number;
 }
 
-/** Rectangle / circle / line. Renders as SVG so stroke + fill behave
- *  predictably across hosts. Opacity animatable.
+/** Rectangle / circle / line / path. Renders as SVG so stroke + fill
+ *  behave predictably across hosts. Opacity animatable.
  *
  *  LSML 1.1 §4.6 + §4.12 add `fills[]` / `strokes[]` arrays as the
  *  preferred way to declare multi-layer fills with linear/radial
  *  gradients. The legacy single `fill` / `stroke` props remain
  *  accepted for 1.0 bundles ; when both are present the array form
  *  wins (the spec forbids mixing, but we tolerate to ease migration).
+ *
+ *  Security (ADR 001 §6 RC#10 + RC#11, issue #30) : every colour that
+ *  reaches an SVG `fill`/`stroke`/`stop-color` attribute goes through
+ *  the strict `parseCssColor` gate, and every path `d` goes through
+ *  `validatePathData` — at EVERY render, because props are wire-
+ *  drivable live via LSDP deltas (`resolveProps`, tree.tsx).
  */
 export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProps) {
   // Canonical prop name is `geometry` (LSML §4.6 — what the compiler
@@ -24,8 +32,8 @@ export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProp
   // RenderNodes that predate the compiler.
   const kind =
     (resolved.geometry as string | undefined) ?? (resolved.kind as string | undefined) ?? "rect";
-  const legacyFill = (resolved.fill as string | undefined) ?? "transparent";
-  const legacyStroke = (resolved.stroke as string | undefined) ?? "transparent";
+  const legacyFill = safeColor(resolved.fill, "shape.fill") ?? "transparent";
+  const legacyStroke = safeColor(resolved.stroke, "shape.stroke") ?? "transparent";
   const legacyStrokeWidth = numberOr(resolved.stroke_width, 0);
   const width = numberOr(resolved.width, 100);
   const height = numberOr(resolved.height, 100);
@@ -37,9 +45,15 @@ export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProp
   const play = mountPlay({ opacity }, animateInitial);
 
   // LSML 1.1 §4.6 — `fills[]` is the preferred multi-fill form. Fall
-  // back to the singular `fill` for 1.0 bundles.
-  const fills = parseFills(resolved.fills);
+  // back to the singular `fill` for 1.0 bundles. Colours are strict-
+  // validated (a rejected colour drops its layer, with diagnostic).
+  const fills = sanitizeFills(parseFills(resolved.fills), "shape.fills");
   const strokes = parseStrokes(resolved.strokes);
+
+  // LSML 1.1 §4.6 — `geometry:"path"` : validated subpaths, one
+  // `<path>` element per entry (ADR 001 §3.2.3). Re-validated at every
+  // render — see module header of svg-path.ts (RC#10).
+  const subpaths = kind === "path" ? parseShapePaths(resolved) : [];
 
   // Each fill compiles to a (defs, ref) pair. We render the shape
   // outline once per fill, layered top-to-bottom (first entry → on
@@ -53,7 +67,10 @@ export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProp
   // as an additional pass over the same shape outline.
   const strokeLayers =
     strokes.length > 0
-      ? strokes.map((s) => ({ color: s.color ?? "transparent", width: s.width ?? 0 }))
+      ? strokes.map((s) => ({
+          color: safeColor(s.color, "shape.strokes.color") ?? "transparent",
+          width: s.width ?? 0,
+        }))
       : [{ color: legacyStroke, width: legacyStrokeWidth }];
 
   // Stack order : fillRefs are emitted top-to-bottom per §4.12. SVG
@@ -61,12 +78,36 @@ export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProp
   // entry in fills[] ends up rendered last (visually on top).
   const stackedFills = [...fillRefs].reverse();
   const stackedStrokes = [...strokeLayers].reverse();
+  // For paths, a zero-width / transparent stroke pass would only emit
+  // invisible duplicate <path> elements — skip it.
+  const effectiveStrokes =
+    kind === "path"
+      ? stackedStrokes.filter((s) => s.width > 0 && s.color !== "transparent")
+      : stackedStrokes;
 
   const renderShape = (
     fill: string,
     stroke: { color: string; width: number },
     keyPrefix: string,
   ): ReactElement => {
+    if (kind === "path") {
+      // §4.6 — fills and strokes apply to the union of all subpaths ;
+      // each subpath keeps its own winding rule (fill-rule).
+      return (
+        <g key={keyPrefix}>
+          {subpaths.map((p: SubPath, i: number) => (
+            <path
+              key={i}
+              d={p.d}
+              fillRule={p.fillRule}
+              fill={fill}
+              stroke={stroke.color}
+              strokeWidth={stroke.width}
+            />
+          ))}
+        </g>
+      );
+    }
     if (kind === "circle") {
       return (
         <circle
@@ -124,9 +165,20 @@ export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProp
       {stackedFills.map((ref, i) =>
         renderShape(ref, { color: "transparent", width: 0 }, `fill-${i}`),
       )}
-      {stackedStrokes.map((s, i) => renderShape("none", s, `stroke-${i}`))}
+      {effectiveStrokes.map((s, i) => renderShape("none", s, `stroke-${i}`))}
     </motion.svg>
   );
+}
+
+/** Strict-validate a colour prop (RC#11 — SVG attributes are injection
+ * sites too once values are wire-drivable). Non-strings resolve to
+ * null silently (absent prop) ; a string that fails the strict grammar
+ * is rejected with a diagnostic (value withheld per R9). */
+function safeColor(value: unknown, field: string): string | null {
+  if (typeof value !== "string") return null;
+  const color = parseCssColor(value);
+  if (color === null) warnRejectedColor(field);
+  return color;
 }
 
 function parseStrokes(value: unknown): StrokeSpec[] {
