@@ -19,7 +19,11 @@ interface StrokeSpec {
  *  wins (the spec forbids mixing, but we tolerate to ease migration).
  */
 export function Shape({ resolved, transitionFor, animateInitial }: PrimitiveProps) {
-  const kind = (resolved.kind as string | undefined) ?? "rect";
+  // Canonical prop name is `geometry` (LSML §4.6 — what the compiler
+  // emits) ; `kind` is kept as a fallback for hand-rolled Solar-lineage
+  // RenderNodes that predate the compiler.
+  const kind =
+    (resolved.geometry as string | undefined) ?? (resolved.kind as string | undefined) ?? "rect";
   const legacyFill = (resolved.fill as string | undefined) ?? "transparent";
   const legacyStroke = (resolved.stroke as string | undefined) ?? "transparent";
   const legacyStrokeWidth = numberOr(resolved.stroke_width, 0);
