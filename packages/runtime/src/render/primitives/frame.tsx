@@ -13,6 +13,9 @@ import { parseCssColor, warnRejectedColor } from "../css-color";
  *  LSML 1.1 §4.3 + §4.12 add `backgrounds[]` as an alternative to the
  *  legacy `background` (single color). The array form supports stacked
  *  fills with linear / radial gradients ; first entry renders on top.
+ *
+ *  LSML 1.1 §4.3 `clipsContent` (default `true`) clips children outside
+ *  the frame's bounds via `overflow: hidden` (ADR 001 §3.2.5, RC#5).
  */
 export function Frame({ resolved, transitionFor, animateInitial, children }: PrimitiveProps) {
   const x = numberOr(resolved.x, 0);
@@ -32,6 +35,7 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
     warnRejectedColor("frame.background");
   }
   const backgrounds = parseFills(resolved.backgrounds);
+  const clipsContent = resolveClipsContent(resolved.clipsContent);
 
   // Pick the most expressive declared transition among the animated
   // bindings (transform / opacity). If none, no animation.
@@ -48,6 +52,11 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
     width,
     height,
     willChange: "transform, opacity",
+    // LSML 1.1 §4.3 `clipsContent` (default `true`) — children outside
+    // the frame's `size` are clipped. Static layout property : it never
+    // animates, so it stays off the 0-layout-event hot path (ADR 001
+    // §3.2.5). `false` => omit the declaration (CSS initial = visible).
+    ...(clipsContent ? { overflow: "hidden" } : {}),
   };
   if (backgrounds.length > 0) {
     Object.assign(style, backgroundsToCss(backgrounds));
@@ -67,6 +76,29 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
       {children}
     </motion.div>
   );
+}
+
+/**
+ * Resolve `clipsContent` (LSML 1.1 §4.3, schema default `true`).
+ *
+ * The prop is wire-drivable (static bundle prop OR live LSDP delta via
+ * `resolveProps`, tree.tsx), so a non-boolean is treated as hostile :
+ * R9 diagnostic (value withheld) + fall back to the spec default
+ * (`true`, i.e. clipped — the safe state for broadcast). The returned
+ * value only ever selects between two literal style fragments — no
+ * untrusted value can reach inline CSS through this path (RC#11 by
+ * construction). Exported for boundary testing.
+ */
+export function resolveClipsContent(v: unknown): boolean {
+  if (v === undefined) return true;
+  if (typeof v === "boolean") return v;
+  if (import.meta.env.DEV) {
+    console.warn(
+      '[lumencast] rejected value for "frame.clipsContent" : ' +
+        "not a boolean (value withheld per R9)",
+    );
+  }
+  return true;
 }
 
 function numberOr(v: unknown, fallback: number): number {
