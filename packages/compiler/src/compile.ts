@@ -49,6 +49,12 @@ export function compileBundle(lsml: LSMLBundle, options: CompileOptions = {}): R
   return {
     scene_version: lsml.scene_version,
     root: compileNode(lsml.layout, options),
+    // LSML 1.1 §17.3 — forward `profiles[]` verbatim so the runtime applies
+    // the same gating rule (§17.3.1 hard rejection for unsupported
+    // behavioural profiles, §17.5.1 advisory pass-through for authoring
+    // profiles) on the compiled path as on the direct-fetch path (ADR 001
+    // §3.2.1, RC#1).
+    ...(lsml.profiles !== undefined ? { profiles: [...lsml.profiles] } : {}),
     ...(lsml.operator_inputs
       ? {
           operator_inputs: lsml.operator_inputs.map((oi) => ({
