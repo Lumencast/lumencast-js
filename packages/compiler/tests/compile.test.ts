@@ -135,6 +135,36 @@ describe("compileBundle", () => {
     expect(text?.bindings).toEqual({ value: "show.title" });
   });
 
+  it("forwards the full TextStyle 1.1 typography + maxLines (issue #31)", () => {
+    const out = compileBundle({
+      ...minimalLsml,
+      lsml: "1.1",
+      layout: {
+        kind: "text",
+        bind: { value: "show.title" },
+        style: {
+          fontSize: 24,
+          lineHeight: 1.2,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          textDecoration: "underline",
+          fontStyle: "italic",
+        },
+        maxLines: 2,
+      },
+    });
+    expect(out.root.kind).toBe("text");
+    expect(out.root.props).toMatchObject({
+      size: 24,
+      lineHeight: 1.2,
+      letterSpacing: 0.5,
+      textTransform: "uppercase",
+      textDecoration: "underline",
+      fontStyle: "italic",
+      maxLines: 2,
+    });
+  });
+
   it("compiles a frame with size + background", () => {
     const out = compileBundle(minimalLsml);
     const frame = out.root.children?.[1];

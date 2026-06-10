@@ -118,6 +118,10 @@ export interface LSMLText extends LSMLBaseNode {
     color?: string;
     textAlign?: "start" | "center" | "end" | "left" | "right";
     lineHeight?: number;
+    letterSpacing?: number;
+    textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+    textDecoration?: "none" | "underline" | "line-through";
+    fontStyle?: "normal" | "italic" | "oblique";
   };
   format?: { kind: string; [extra: string]: unknown };
   maxLines?: number;
