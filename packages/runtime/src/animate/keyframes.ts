@@ -7,6 +7,12 @@
 // (`scale: [0.8, 1.05, 1]`) plus `times: [0, 0.6, 1]` that framer-motion
 // expects on its `animate` / `transition` props.
 
+import {
+  FILTER_IDENTITY,
+  sanitizeCssFilterString,
+  warnRejectedFilter,
+} from "../render/filter-clamp";
+
 export type KeyframeEasing = "linear" | "ease-in" | "ease-out" | "ease-in-out";
 
 export interface KeyframeStep {
@@ -98,13 +104,25 @@ function pullChannel(
   const values: (number | string)[] = [];
   let last: number | string | undefined;
   for (const s of steps) {
-    const v = s[prop];
+    let v: number | string | undefined = s[prop];
+    // R8 runtime half (ADR 001 §5.1, issue #42) — keyframe filter
+    // strings in a hand-crafted bundle bypass the compiler clamps.
+    // Re-gate here ; rejected → treat as omitted (last-known-good).
+    if (prop === "filter" && v !== undefined) {
+      const safe = sanitizeCssFilterString(v);
+      if (safe === null) {
+        warnRejectedFilter("keyframes.steps[].filter");
+        v = undefined;
+      } else {
+        v = safe;
+      }
+    }
     if (v !== undefined) {
       any = true;
       last = v;
       values.push(v);
     } else {
-      values.push(last ?? (prop === "opacity" ? 1 : "none"));
+      values.push(last ?? (prop === "opacity" ? 1 : FILTER_IDENTITY));
     }
   }
   if (any) out[prop] = values;
