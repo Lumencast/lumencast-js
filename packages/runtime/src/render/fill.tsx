@@ -169,6 +169,42 @@ function cssWithOpacity(color: string, opacity: number): string {
   return `color-mix(in srgb, ${color} ${opacity * 100}%, transparent)`;
 }
 
+/** Validate every colour carried by a Fill array through the strict
+ * parser (RC#11 — issue #30 contractual comment : SVG `fill`/`stroke`
+ * attributes and `<stop stop-color>` are injection sites too, since
+ * fills arrive from untrusted bundles AND live LSDP deltas). A fill
+ * whose solid colour — or ANY gradient stop colour — is rejected drops
+ * the whole layer with a diagnostic : never passthrough, never a
+ * half-built gradient. Returned fills carry canonicalised colours. */
+export function sanitizeFills(fills: Fill[], field: string): Fill[] {
+  const out: Fill[] = [];
+  for (const fill of fills) {
+    if (fill.kind === "solid") {
+      const color = parseCssColor(fill.color);
+      if (color === null) {
+        warnRejectedColor(`${field}.color`);
+        continue;
+      }
+      out.push({ ...fill, color });
+      continue;
+    }
+    const stops: FillStop[] = [];
+    let rejected = false;
+    for (const s of fill.stops ?? []) {
+      const color = parseCssColor(s.color);
+      if (color === null) {
+        warnRejectedColor(`${field}.stops.color`);
+        rejected = true;
+        break;
+      }
+      stops.push({ ...s, color });
+    }
+    if (rejected) continue;
+    out.push({ ...fill, stops });
+  }
+  return out;
+}
+
 /** Coerce loose JSON into a Fill array. Returns [] for non-arrays. */
 export function parseFills(value: unknown): Fill[] {
   if (!Array.isArray(value)) return [];
