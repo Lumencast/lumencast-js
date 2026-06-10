@@ -29,6 +29,15 @@ export interface LumencastMetric {
   [key: string]: unknown;
 }
 
+/** Anti-silent-drop render diagnostic (ADR 001 §3.4, issue #34).
+ *  Carries node identity + field + static reason — NEVER a leaf or
+ *  prop value (Bastion R9). */
+export interface LumencastDiagnostic {
+  nodeId: string;
+  field: string;
+  reason: string;
+}
+
 export interface MountOptions {
   target: HTMLElement;
   /** WebSocket URL of the LSDP/1 server (wss://... in production). */
@@ -42,6 +51,11 @@ export interface MountOptions {
   onStatus?: (status: LumencastStatus) => void;
   onError?: (err: LumencastError) => void;
   onMetric?: (metric: LumencastMetric) => void;
+  /** Anti-silent-drop diagnostics stream (ADR 001 §3.4) : rejected
+   *  values, unknown props, spec'd-but-unrendered fields. Events, not
+   *  logs — `broadcast` builds stay console-silent. When omitted, the
+   *  runtime falls back to a DEV-only console.warn. */
+  onDiagnostic?: (diagnostic: LumencastDiagnostic) => void;
 }
 
 export interface LumencastHandle {

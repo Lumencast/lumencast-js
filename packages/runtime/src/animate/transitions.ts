@@ -181,6 +181,7 @@ export function resolveTransition(
 export function mountPlay(
   base: Record<string, number | string>,
   initial: Record<string, number | string> | undefined,
+  nodeId?: string,
 ): MountPlay {
   if (!initial || Object.keys(initial).length === 0) {
     // No `from` → mount directly at target. Pinning `initial` to the
@@ -197,7 +198,7 @@ export function mountPlay(
     const safe = sanitizeCssFilterString(initial["filter"]);
     from = { ...initial };
     if (safe === null) {
-      warnRejectedFilter("animate_initial.filter");
+      warnRejectedFilter("animate_initial.filter", nodeId);
       delete from["filter"];
     } else {
       from["filter"] = safe;

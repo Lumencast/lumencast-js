@@ -19,6 +19,9 @@ import { Instance } from "./instance";
 
 export interface PrimitiveProps {
   resolved: Record<string, unknown>;
+  /** `RenderNode.id` of the node being rendered — threaded into every
+   *  diagnostic the primitive emits (ADR 001 RC#7, issue #34). */
+  nodeId?: string;
   transitionFor: (key: string) => Transition | undefined;
   /** LSML 1.1 `animate.from` lowered to a flat framer `initial` map
    *  (keys: `opacity`, `scale`, `rotate`, `x`, `y`). When present, a

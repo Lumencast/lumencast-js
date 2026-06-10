@@ -65,7 +65,7 @@ export interface CompiledKeyframes {
  * or invariants are violated (first.at !== 0 or last.at !== 1) — the
  * caller then falls back to no animation.
  */
-export function compileForFramer(kf: Keyframes): CompiledKeyframes | undefined {
+export function compileForFramer(kf: Keyframes, nodeId?: string): CompiledKeyframes | undefined {
   const steps = kf.steps;
   if (!Array.isArray(steps) || steps.length < 2) return undefined;
   const first = steps[0];
@@ -78,8 +78,8 @@ export function compileForFramer(kf: Keyframes): CompiledKeyframes | undefined {
   // For each animatable property, pull the value at every step. When a
   // step omits the property, we fall back to the previous step's value
   // (last-known-good) so framer-motion sees a coherent waypoint chain.
-  pullChannel(steps, "opacity", animate);
-  pullChannel(steps, "filter", animate);
+  pullChannel(steps, "opacity", animate, nodeId);
+  pullChannel(steps, "filter", animate, nodeId);
   pullTransform(steps, "scale", animate);
   pullTransform(steps, "translateX", animate);
   pullTransform(steps, "translateY", animate);
@@ -99,6 +99,7 @@ function pullChannel(
   steps: KeyframeStep[],
   prop: "opacity" | "filter",
   out: Record<string, (number | string)[]>,
+  nodeId?: string,
 ): void {
   let any = false;
   const values: (number | string)[] = [];
@@ -111,7 +112,7 @@ function pullChannel(
     if (prop === "filter" && v !== undefined) {
       const safe = sanitizeCssFilterString(v);
       if (safe === null) {
-        warnRejectedFilter("keyframes.steps[].filter");
+        warnRejectedFilter("keyframes.steps[].filter", nodeId);
         v = undefined;
       } else {
         v = safe;

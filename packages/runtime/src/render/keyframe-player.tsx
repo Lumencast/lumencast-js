@@ -22,10 +22,18 @@ import { scopedPath, usePathScope } from "./scope";
 export interface KeyframePlayerProps {
   keyframes: Keyframes;
   store: Store;
+  /** `RenderNode.id` of the owning node — threaded into keyframe
+   *  diagnostics (ADR 001 RC#7, issue #34). */
+  nodeId?: string;
   children: ReactNode;
 }
 
-export function KeyframePlayer({ keyframes, store, children }: KeyframePlayerProps): ReactNode {
+export function KeyframePlayer({
+  keyframes,
+  store,
+  nodeId,
+  children,
+}: KeyframePlayerProps): ReactNode {
   useSignals();
   const scope = usePathScope();
   const staggerDelayMs = useContext(StaggerContext);
@@ -43,7 +51,7 @@ export function KeyframePlayer({ keyframes, store, children }: KeyframePlayerPro
     }
   }
 
-  const compiled = compileForFramer(keyframes);
+  const compiled = compileForFramer(keyframes, nodeId);
   if (!compiled) {
     return <>{children}</>;
   }

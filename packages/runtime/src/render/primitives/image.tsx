@@ -6,9 +6,12 @@ import { toFramer, mountPlay, resolveTransition } from "../../animate/transition
  *  `opacity`. Opacity is animated when a transition is declared. When an
  *  `animate.from` is lowered onto the node, it mounts at that state and
  *  plays to its target on mount (mount-play). */
-export function Image({ resolved, transitionFor, animateInitial }: PrimitiveProps) {
+export function Image({ resolved, nodeId, transitionFor, animateInitial }: PrimitiveProps) {
   const src = resolved.src as string | undefined;
   if (!src) return null;
+  // LSML §4.5 `alt` is required and was silently unrendered until
+  // issue #34's allowlist audit surfaced it — now forwarded to the DOM.
+  const alt = typeof resolved.alt === "string" ? resolved.alt : "";
   const fit = (resolved.fit as string | undefined) ?? "contain";
   const position = (resolved.position as string | undefined) ?? "center";
   const opacity = numberOr(resolved.opacity, 1);
@@ -19,11 +22,12 @@ export function Image({ resolved, transitionFor, animateInitial }: PrimitiveProp
   const height = dimOr(resolved.height, "100%");
 
   const tx = resolveTransition(transitionFor, ["opacity", "src"], animateInitial);
-  const play = mountPlay({ opacity }, animateInitial);
+  const play = mountPlay({ opacity }, animateInitial, nodeId);
 
   return (
     <motion.img
       src={src}
+      alt={alt}
       style={{
         objectFit: fit as React.CSSProperties["objectFit"],
         objectPosition: position,

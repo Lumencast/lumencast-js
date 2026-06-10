@@ -10,7 +10,7 @@
 //   B. lineHeight exact boundaries : 0 accepted, exact negative rejected
 //   C. letterSpacing negatives : accepted (spec allows negative spacing)
 //   D. maxLines positive-integer contract : 1 (min accepted), -1, 1e9
-//      (large but integer — accepted, no DoS guard in spec), non-integers
+//      (rejected since issue #34's defence-in-depth caps), non-integers
 //   E. Enum case-sensitivity : mixed-case and ALLCAPS rejected per closed set
 //   F. Enum empty string : rejected
 //   G. textTransform "URL(x)" injection variant
@@ -27,7 +27,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { Tree } from "../../src/render/tree.js";
-import { resolveTypography } from "../../src/render/primitives/text.js";
+import {
+  resolveTypography,
+  MAX_LINE_HEIGHT,
+  MAX_MAX_LINES,
+} from "../../src/render/primitives/text.js";
 import { createStore, type Store } from "../../src/state/store.js";
 import type { RenderNode } from "../../src/render/bundle.js";
 
@@ -141,10 +145,19 @@ describe("B — lineHeight exact boundaries", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("lineHeight = Number.MAX_VALUE is accepted (finite positive)", async () => {
-    const frag = resolveTypography({ lineHeight: Number.MAX_VALUE });
-    expect(frag.lineHeight).toBe(Number.MAX_VALUE);
+  // Issue #34 (Bastion follow-up on PR #38) : defence-in-depth upper
+  // bound. Values above MAX_LINE_HEIGHT are REJECTED (diagnostic +
+  // omit), no longer accepted as "any finite positive".
+  it(`lineHeight = MAX_LINE_HEIGHT (${MAX_LINE_HEIGHT}) is accepted (cap boundary)`, async () => {
+    const frag = resolveTypography({ lineHeight: MAX_LINE_HEIGHT });
+    expect(frag.lineHeight).toBe(MAX_LINE_HEIGHT);
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("lineHeight = Number.MAX_VALUE is rejected (above the #34 cap)", async () => {
+    const frag = resolveTypography({ lineHeight: Number.MAX_VALUE });
+    expect(frag.lineHeight).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalled();
   });
 });
 
@@ -194,12 +207,19 @@ describe("D — maxLines integer contract boundaries", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("maxLines = 1e9 is accepted (large integer, no DoS guard in spec)", async () => {
-    // The spec does not define an upper bound; positiveInteger accepts any
-    // integer ≥ 1. We assert acceptance and that WebkitLineClamp equals 1e9.
-    const frag = resolveTypography({ maxLines: 1e9 });
-    expect(frag.WebkitLineClamp).toBe(1e9);
+  // Issue #34 (Bastion follow-up on PR #38) : the spec is silent on an
+  // upper bound, so the runtime applies a defence-in-depth cap
+  // (MAX_MAX_LINES = 1000). Above-cap values are rejected, not clamped.
+  it(`maxLines = MAX_MAX_LINES (${MAX_MAX_LINES}) is accepted (cap boundary)`, async () => {
+    const frag = resolveTypography({ maxLines: MAX_MAX_LINES });
+    expect(frag.WebkitLineClamp).toBe(MAX_MAX_LINES);
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("maxLines = 1e9 is rejected (above the #34 defence-in-depth cap)", async () => {
+    const frag = resolveTypography({ maxLines: 1e9 });
+    expect(frag).toEqual({});
+    expect(warnSpy).toHaveBeenCalled();
   });
 
   it("maxLines = 0 is rejected (must be ≥ 1)", async () => {
@@ -208,10 +228,10 @@ describe("D — maxLines integer contract boundaries", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("maxLines = Number.MAX_SAFE_INTEGER is accepted", async () => {
+  it("maxLines = Number.MAX_SAFE_INTEGER is rejected (above the #34 cap)", async () => {
     const frag = resolveTypography({ maxLines: Number.MAX_SAFE_INTEGER });
-    expect(frag.WebkitLineClamp).toBe(Number.MAX_SAFE_INTEGER);
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(frag).toEqual({});
+    expect(warnSpy).toHaveBeenCalled();
   });
 });
 
