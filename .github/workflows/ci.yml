@@ -129,7 +129,6 @@ jobs:
       - run: pnpm --filter @lumencast/runtime exec playwright install --with-deps chromium
       - run: pnpm build
       - run: pnpm test:e2e
-        continue-on-error: true # E2E suite ships incrementally; do not gate v0.1.x merges yet
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
