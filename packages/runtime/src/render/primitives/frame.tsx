@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import type { PrimitiveProps } from "./index";
 import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
 import { backgroundsToCss, parseFills } from "../fill";
+import { parseCssColor, warnRejectedColor } from "../css-color";
 
 /** Absolute-positioned container with size + transform + opacity.
  *  Animatable on `transform` and `opacity` only — width/height/position
@@ -23,8 +24,13 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
   const rotate = numberOr(resolved.rotate, 0);
 
   // 1.0 single-fill prop — used as fallback when 1.1 `backgrounds[]`
-  // is empty.
-  const legacyBackground = (resolved.background as string | undefined) ?? undefined;
+  // is empty. RC#11 : the value is untrusted (static prop OR live LSDP
+  // delta) and lands in inline CSS — strict-parse, never passthrough.
+  const rawBackground = resolved.background;
+  const legacyBackground = rawBackground === undefined ? undefined : parseCssColor(rawBackground);
+  if (rawBackground !== undefined && legacyBackground === null) {
+    warnRejectedColor("frame.background");
+  }
   const backgrounds = parseFills(resolved.backgrounds);
 
   // Pick the most expressive declared transition among the animated
@@ -45,7 +51,7 @@ export function Frame({ resolved, transitionFor, animateInitial, children }: Pri
   };
   if (backgrounds.length > 0) {
     Object.assign(style, backgroundsToCss(backgrounds));
-  } else if (legacyBackground !== undefined) {
+  } else if (legacyBackground !== undefined && legacyBackground !== null) {
     style.background = legacyBackground;
   }
 

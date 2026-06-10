@@ -10,6 +10,7 @@
 // renders on top per §4.12).
 
 import type { CSSProperties, ReactElement } from "react";
+import { parseCssColor, warnRejectedColor } from "./css-color";
 
 export interface FillStop {
   offset: number;
@@ -117,16 +118,30 @@ export function backgroundsToCss(fills: Fill[]): CSSProperties {
 }
 
 function fillToCss(fill: Fill): string | null {
+  // RC#11 — every colour interpolated into an inline CSS string MUST
+  // pass the strict parser first (fills/stops arrive from untrusted
+  // bundles AND live LSDP deltas). A rejected colour drops the whole
+  // layer : never passthrough, never a half-built gradient.
   if (fill.kind === "solid") {
+    const color = parseCssColor(fill.color);
+    if (color === null) {
+      warnRejectedColor("fill.color");
+      return null;
+    }
     // Wrap solid in linear-gradient so it can stack with other layers.
-    return `linear-gradient(${fill.color}, ${fill.color})`;
+    return `linear-gradient(${color}, ${color})`;
   }
-  const stops = fill.stops
-    .map((s) => {
-      const c = s.opacity !== undefined ? cssWithOpacity(s.color, s.opacity) : s.color;
-      return `${c} ${(s.offset * 100).toFixed(2)}%`;
-    })
-    .join(", ");
+  const safeStops: string[] = [];
+  for (const s of fill.stops) {
+    const color = parseCssColor(s.color);
+    if (color === null) {
+      warnRejectedColor("fill.stops.color");
+      return null;
+    }
+    const c = s.opacity !== undefined ? cssWithOpacity(color, s.opacity) : color;
+    safeStops.push(`${c} ${(s.offset * 100).toFixed(2)}%`);
+  }
+  const stops = safeStops.join(", ");
   if (fill.kind === "linear-gradient") {
     const angle = fill.angle_deg ?? 0;
     return `linear-gradient(${angle}deg, ${stops})`;
@@ -137,9 +152,13 @@ function fillToCss(fill: Fill): string | null {
   return `radial-gradient(circle at ${cx}% ${cy}%, ${stops})`;
 }
 
+/** Apply a stop opacity to an ALREADY-VALIDATED colour (callers must
+ * have run `parseCssColor` first — fillToCss is the single entry).
+ * For 6-digit hex we append the alpha byte ; every other accepted
+ * form goes through color-mix, which is safe because the interpolated
+ * string can only be a strict-grammar colour (RC#11 fix : this used
+ * to interpolate the raw, unparsed input). */
 function cssWithOpacity(color: string, opacity: number): string {
-  // Best-effort wrapper — for hex/rgb we can append alpha. For
-  // unrecognised forms, fall back to color-mix.
   const hex = color.match(/^#([0-9a-f]{6})$/i);
   if (hex) {
     const a = Math.round(opacity * 255)
