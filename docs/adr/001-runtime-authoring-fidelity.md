@@ -1,8 +1,8 @@
 # ADR 001 — Fermer les gaps de fidélité design & animation du runtime (authoring Figma → antenne)
 
-- **Status** : proposed
+- **Status** : accepted
 - **Date** : 2026-06-10
-- **Decided** : —
+- **Decided** : 2026-06-10
 - **Deciders** : @ClodoCapeo
 - **Author** : Atlas
 - **Supersedes** : —
