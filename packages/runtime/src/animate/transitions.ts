@@ -85,12 +85,18 @@ export function toFramer(t: Transition | undefined): FramerTransition {
  *  may declare. A primitive that doesn't natively animate a given key
  *  still converges it to this neutral value on mount so the element ends
  *  up visually correct (e.g. a `from.scale: 0.85` settles at `scale: 1`). */
-const INITIAL_IDENTITY: Record<string, number> = {
+const INITIAL_IDENTITY: Record<string, number | string> = {
   opacity: 1,
   scale: 1,
+  scaleX: 1,
+  scaleY: 1,
   rotate: 0,
   x: 0,
   y: 0,
+  // LSML §6.1 filter identity — both functions are always present so
+  // framer interpolates between structurally-identical filter lists
+  // (the compiler emits the same two-function form, clamped per R8).
+  filter: "blur(0px) brightness(1)",
 };
 
 export interface MountPlay {

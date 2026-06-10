@@ -26,7 +26,9 @@ import type {
   LSMLAnimateDirective,
   LSMLAnimateState,
   LSMLBundle,
+  LSMLKeyframes,
   LSMLNode,
+  LSMLPath,
   LSMLRepeat,
   LSMLText,
 } from "./lsml-types.js";
@@ -39,6 +41,49 @@ export interface CompileOptions {
 }
 
 const SUPPORTED_VERSIONS = new Set(["1.0", "1.1"] as const);
+
+// --- hard caps (ADR 001 §5.1 R8 + §6 RC#10, threat model Bastion) ------
+//
+// Filter clamps — an unbounded `filter` is a compositing DoS in CEF.
+/** Max CSS `blur()` radius emitted by the compiler, in px. */
+export const MAX_FILTER_BLUR_PX = 100;
+/** Max CSS `brightness()` factor emitted by the compiler (spec §6.1
+ *  explicitly blesses clamping to 4). */
+export const MAX_FILTER_BRIGHTNESS = 4;
+// Path caps — `d` strings are untrusted author input rendered into SVG.
+/** Max size of a single subpath `d` string (8 KiB, RC#10). */
+export const MAX_PATH_SUBPATH_BYTES = 8192;
+/** Max number of subpaths on a single shape (RC#10). */
+export const MAX_PATH_SUBPATHS = 64;
+/** Max number of path commands per subpath (RC#10). Kept below the
+ *  densest possible command packing within the byte cap (single-letter
+ *  `Z` spam = 1 command/byte) so the cap is actually reachable. */
+export const MAX_PATH_COMMANDS = 4000;
+
+/** Runtime keyframes shape (`@lumencast/runtime` `Keyframes`), referenced
+ *  through `RenderNode` so the compiler stays a type-only consumer. */
+type RuntimeKeyframes = NonNullable<RenderNode["keyframes"]>;
+type RuntimeKeyframeStep = RuntimeKeyframes["steps"][number];
+
+/** Emit an anti-silent-drop diagnostic (ADR 001 §3.4). Per Bastion R9 the
+ *  message carries `node.id` + field + reason and NEVER the offending
+ *  value (leaf/prop values can carry sensitive on-air content). */
+function warn(
+  opts: CompileOptions,
+  nodeId: string | undefined,
+  field: string,
+  reason: string,
+): void {
+  const message = `compiler: node "${nodeId ?? "<anon>"}": field "${field}" ${reason}`;
+  if (opts.strict) throw new Error(message);
+  opts.onWarn?.(message);
+}
+
+/** Hard compile error — invalid value. Per R9 the message names the node
+ *  and field but never echoes the value itself. */
+function invalid(nodeId: string | undefined, field: string, reason: string): Error {
+  return new Error(`compiler: node "${nodeId ?? "<anon>"}": field "${field}" ${reason}`);
+}
 
 export function compileBundle(lsml: LSMLBundle, options: CompileOptions = {}): RenderBundle {
   if (!SUPPORTED_VERSIONS.has(lsml.lsml as "1.0" | "1.1")) {
@@ -117,6 +162,12 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
         props["y"] = node.position.y;
       }
       if (node.background !== undefined) props["background"] = node.background;
+      // 1.1 §4.3 + §4.12 — stacked backgrounds (frame.tsx reads
+      // `resolved.backgrounds`; array form wins over legacy `background`).
+      if (node.backgrounds !== undefined) props["backgrounds"] = node.backgrounds;
+      // 1.1 §4.3 — clip children to the frame bounds. The spec default
+      // (`true`) is applied runtime-side ; only explicit values forward.
+      if (node.clipsContent !== undefined) props["clipsContent"] = node.clipsContent;
       break;
 
     case "text":
@@ -138,10 +189,36 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
         props["width"] = node.size.w;
         props["height"] = node.size.h;
       }
-      if (node.pathData !== undefined) props["pathData"] = node.pathData;
+      // Path geometry — every `d` string is untrusted author input that
+      // ends up in an SVG attribute. Validate at compile per RC#10 (the
+      // runtime re-validates live deltas in its own gate — issue #30).
+      if (node.pathData !== undefined) {
+        validatePathData(node.pathData, node.id, "pathData");
+        props["pathData"] = node.pathData;
+      }
+      if (node.paths !== undefined) {
+        props["paths"] = lowerPaths(node.paths, node.id);
+        if (node.pathData !== undefined) {
+          // §4.6 declares the two forms mutually exclusive ; we keep
+          // both forwarded (runtime prefers `paths`) but surface it.
+          warn(opts, node.id, "pathData", "is mutually exclusive with paths[] (LSML §4.6)");
+        }
+      }
       if (node.fill !== undefined) props["fill"] = node.fill;
-      if (node.stroke !== undefined) props["stroke"] = node.stroke;
-      if (node.cornerRadius !== undefined) props["cornerRadius"] = node.cornerRadius;
+      // 1.1 §4.6 + §4.12 — stacked fills (shape.tsx reads `resolved.fills`).
+      if (node.fills !== undefined) props["fills"] = node.fills;
+      // Single stroke lowers to the flat props shape.tsx consumes
+      // (`stroke` = colour string, `stroke_width` = number). The previous
+      // object forward was silently unrenderable.
+      if (node.stroke !== undefined) {
+        props["stroke"] = node.stroke.color;
+        props["stroke_width"] = node.stroke.width;
+      }
+      // 1.1 §4.6 — stacked strokes (shape.tsx reads `resolved.strokes`).
+      if (node.strokes !== undefined) props["strokes"] = node.strokes;
+      // Canonical RenderNode name is `radius` (what shape.tsx reads) ;
+      // the previous `cornerRadius` forward was silently dropped.
+      if (node.cornerRadius !== undefined) props["radius"] = node.cornerRadius;
       if (node.ariaLabel !== undefined) props["ariaLabel"] = node.ariaLabel;
       break;
 
@@ -208,12 +285,23 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
     if (tx) {
       const transitions: Record<string, ReturnType<typeof compileAnimate>> = {};
       if (node.animate.opacity !== undefined) transitions["opacity"] = tx;
-      if (node.animate.transform?.scale !== undefined) transitions["scale"] = tx;
+      if (node.animate.transform?.scale !== undefined) {
+        // Per-axis `[sx, sy]` lowers to framer's `scaleX` / `scaleY`
+        // motion keys ; a scalar stays on uniform `scale`.
+        if (Array.isArray(node.animate.transform.scale)) {
+          transitions["scaleX"] = tx;
+          transitions["scaleY"] = tx;
+        } else {
+          transitions["scale"] = tx;
+        }
+      }
       if (node.animate.transform?.rotate !== undefined) transitions["rotate"] = tx;
       if (node.animate.transform?.translate !== undefined) {
         transitions["x"] = tx;
         transitions["y"] = tx;
       }
+      // §6.1 — `filter` is animatable ; previously dropped in silence.
+      if (node.animate.filter !== undefined) transitions["filter"] = tx;
       // Type assertion: RenderNode.transitions matches Transition shape; the
       // cast keeps the compiler self-contained without re-importing the runtime
       // Transition type.
@@ -222,40 +310,263 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
       }
     }
 
+    // §6.2 `transition.mass` is spec'd but not lowered yet (ADR 001
+    // phase B adds it to SpringTransition). Anti-silent-drop : diagnose.
+    if (node.animate.transition?.mass !== undefined) {
+      warn(opts, node.id, "animate.transition.mass", "is not lowered yet (ADR 001 phase B)");
+    }
+
     // LSML 1.1 §6 `animate.from` → flat framer `initial` map. Lowered
     // independently of `transition` : an author may declare a `from`
     // without a `transition` (mount-play with the runtime's default
     // timing). When no `from` is present, `animate_initial` is omitted
     // and the prior no-mount-play behaviour is preserved (rétro-compat).
     if (node.animate.from) {
-      const initial = lowerAnimateState(node.animate.from);
+      const initial = lowerAnimateState(node.animate.from, node.id, opts);
       if (Object.keys(initial).length > 0) {
         out.animate_initial = initial;
       }
     }
   }
 
+  // §6.3 `bindAnimate` is spec'd but not lowered yet (ADR 001 phase B,
+  // issue #33). Anti-silent-drop : diagnose instead of dropping.
+  if (node.bindAnimate !== undefined) {
+    warn(opts, node.id, "bindAnimate", "is not lowered yet (ADR 001 phase B)");
+  }
+
+  // LSML 1.1 §6.6 — keyframe sequence, lowered to the runtime
+  // `Keyframes` shape consumed by KeyframePlayer.
+  if (node.keyframes !== undefined) {
+    out.keyframes = lowerKeyframes(node.keyframes, node.id, opts);
+  }
+
   return out;
+}
+
+// --- path validation (ADR 001 §6 RC#10 — compile-side gate) -----------
+//
+// SVG `d` strings are untrusted author input rendered into a DOM
+// attribute. The grammar is ALLOWLISTED : path command letters
+// `MmLlHhVvCcSsQqTtAaZz` plus number/separator characters only. This
+// rejects `url(`, `data:`, `<` and `&` by construction (none of their
+// characters are in the allowlist). Implemented as a single-pass manual
+// scanner — linear time, no regex, no backtracking (anti-ReDoS, RC#12).
+//
+// Known limitation (by design) : the scanner is CHAR-LEVEL, not a number
+// grammar. Malformed numerics built from allowlisted characters (`1.2.3`,
+// `+-+5`, overflow exponents like `1e9999`) pass validation. This is
+// accepted : a syntactically invalid `d` is simply ignored by the
+// browser's SVG path parser (the path does not render), so there is no
+// injection or DoS vector — only the author's own shape failing to draw.
+// Upgrading to a full number grammar would add parser complexity for no
+// security gain.
+const PATH_COMMANDS = new Set("MmLlHhVvCcSsQqTtAaZz");
+
+function isPathNumberChar(ch: string): boolean {
+  return (ch >= "0" && ch <= "9") || ch === "." || ch === "+" || ch === "-" || ch === ",";
+}
+
+function isPathWhitespace(ch: string): boolean {
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+}
+
+/** Validate one subpath `d` string. Throws on any violation (size cap,
+ *  command cap, character outside the allowlist). Error messages name
+ *  the node + field but never echo the string (R9). */
+export function validatePathData(d: string, nodeId: string | undefined, field: string): void {
+  if (typeof d !== "string" || d.length === 0) {
+    throw invalid(nodeId, field, "must be a non-empty SVG path string");
+  }
+  // Allowlisted grammar is ASCII-only, so UTF-16 length === byte length
+  // for any string that passes the scan ; checking the cap first keeps
+  // the scan itself bounded.
+  if (d.length > MAX_PATH_SUBPATH_BYTES) {
+    throw invalid(nodeId, field, `exceeds the ${MAX_PATH_SUBPATH_BYTES}-byte subpath cap (RC#10)`);
+  }
+  let commands = 0;
+  for (let i = 0; i < d.length; i++) {
+    const ch = d[i] as string;
+    if (PATH_COMMANDS.has(ch)) {
+      commands++;
+      if (commands > MAX_PATH_COMMANDS) {
+        throw invalid(
+          nodeId,
+          field,
+          `exceeds the ${MAX_PATH_COMMANDS}-command subpath cap (RC#10)`,
+        );
+      }
+      continue;
+    }
+    if (isPathNumberChar(ch) || isPathWhitespace(ch)) continue;
+    // Exponent marker — only valid immediately after a digit or dot
+    // (e.g. `1e3`, `1.5E-2`). A bare `e`/`E` is rejected.
+    if ((ch === "e" || ch === "E") && i > 0) {
+      const prev = d[i - 1] as string;
+      if ((prev >= "0" && prev <= "9") || prev === ".") continue;
+    }
+    throw invalid(nodeId, field, `contains a character outside the SVG path allowlist (RC#10)`);
+  }
+  if (commands === 0) {
+    throw invalid(nodeId, field, "contains no SVG path command");
+  }
+}
+
+/** Validate + forward `paths[]` (LSML §4.6). Caps the subpath count and
+ *  validates every `data` string. */
+function lowerPaths(
+  paths: LSMLPath[],
+  nodeId: string | undefined,
+): { data: string; windingRule?: "NONZERO" | "EVENODD" }[] {
+  if (paths.length === 0) {
+    throw invalid(nodeId, "paths", "must contain at least one subpath");
+  }
+  if (paths.length > MAX_PATH_SUBPATHS) {
+    throw invalid(nodeId, "paths", `exceeds the ${MAX_PATH_SUBPATHS}-subpath cap (RC#10)`);
+  }
+  return paths.map((p, i) => {
+    validatePathData(p.data, nodeId, `paths[${i}].data`);
+    return {
+      data: p.data,
+      ...(p.windingRule !== undefined ? { windingRule: p.windingRule } : {}),
+    };
+  });
+}
+
+// --- filter lowering (ADR 001 §5.1 R8 — hard clamps, non-optional) -----
+
+/** Lower an LSML `filter` state (`{ blur?, brightness? }`) to the CSS
+ *  filter string framer-motion animates. Values are HARD-clamped at
+ *  lowering : negative / non-finite values are rejected (compile error),
+ *  `blur` caps at MAX_FILTER_BLUR_PX, `brightness` caps at
+ *  MAX_FILTER_BRIGHTNESS. Both functions are always emitted so framer
+ *  can interpolate between structurally-identical filter lists. */
+function lowerFilter(
+  f: NonNullable<LSMLAnimateState["filter"]>,
+  nodeId: string | undefined,
+  field: string,
+  opts: CompileOptions,
+): string {
+  let blur = 0;
+  let brightness = 1;
+  if (f.blur !== undefined) {
+    // `-0 < 0` is false in IEEE-754 — Object.is closes the negative-zero hole.
+    if (
+      typeof f.blur !== "number" ||
+      !Number.isFinite(f.blur) ||
+      f.blur < 0 ||
+      Object.is(f.blur, -0)
+    ) {
+      throw invalid(nodeId, `${field}.blur`, "must be a finite number >= 0 (R8)");
+    }
+    blur = f.blur;
+    if (blur > MAX_FILTER_BLUR_PX) {
+      blur = MAX_FILTER_BLUR_PX;
+      warn(opts, nodeId, `${field}.blur`, `clamped to the ${MAX_FILTER_BLUR_PX}px cap (R8)`);
+    }
+  }
+  if (f.brightness !== undefined) {
+    // Same -0 gate as blur : `brightness(-0)` stringifies to `brightness(0)`,
+    // a fully black element slipping past the negative-value rejection (R8).
+    if (
+      typeof f.brightness !== "number" ||
+      !Number.isFinite(f.brightness) ||
+      f.brightness < 0 ||
+      Object.is(f.brightness, -0)
+    ) {
+      throw invalid(nodeId, `${field}.brightness`, "must be a finite number >= 0 (R8)");
+    }
+    brightness = f.brightness;
+    if (brightness > MAX_FILTER_BRIGHTNESS) {
+      brightness = MAX_FILTER_BRIGHTNESS;
+      warn(opts, nodeId, `${field}.brightness`, `clamped to the ${MAX_FILTER_BRIGHTNESS} cap (R8)`);
+    }
+  }
+  return `blur(${blur}px) brightness(${brightness})`;
+}
+
+// --- keyframes lowering (LSML §6.6 → runtime Keyframes shape) ----------
+
+/** Lower a §6.6 keyframe sequence into the shape KeyframePlayer /
+ *  compileForFramer consume : `transform.translate: [x, y]` →
+ *  `translateX` / `translateY`, `filter: { blur, brightness }` → clamped
+ *  CSS string. Per-axis step scale degrades to `sx` with a diagnostic
+ *  (the runtime keyframe channel is uniform-scale ; per-axis keyframe
+ *  scale lands with ADR 001 phase B/C). */
+function lowerKeyframes(
+  kf: LSMLKeyframes,
+  nodeId: string | undefined,
+  opts: CompileOptions,
+): RuntimeKeyframes {
+  const steps: RuntimeKeyframeStep[] = kf.steps.map((s, i) => {
+    const step: RuntimeKeyframeStep = { at: s.at };
+    if (s.opacity !== undefined) step.opacity = s.opacity;
+    if (s.filter !== undefined) {
+      step.filter = lowerFilter(s.filter, nodeId, `keyframes.steps[${i}].filter`, opts);
+    }
+    const t = s.transform;
+    if (t) {
+      const transform: NonNullable<RuntimeKeyframeStep["transform"]> = {};
+      if (t.scale !== undefined) {
+        if (Array.isArray(t.scale)) {
+          transform.scale = t.scale[0];
+          warn(
+            opts,
+            nodeId,
+            `keyframes.steps[${i}].transform.scale`,
+            "per-axis scale is not supported in keyframes yet ; lowered to the x-axis value",
+          );
+        } else {
+          transform.scale = t.scale;
+        }
+      }
+      if (t.rotate !== undefined) transform.rotate = t.rotate;
+      if (t.translate !== undefined) {
+        transform.translateX = t.translate[0];
+        transform.translateY = t.translate[1];
+      }
+      if (Object.keys(transform).length > 0) step.transform = transform;
+    }
+    return step;
+  });
+  return {
+    ...(kf.key !== undefined ? { key: kf.key } : {}),
+    steps,
+    duration_ms: kf.duration_ms,
+    ...(kf.easing !== undefined ? { easing: kf.easing } : {}),
+  };
 }
 
 /** Lower an `animate.from` (or any LSML animate state) into the flat
  *  framer-motion key space the runtime primitives consume: `opacity`,
- *  `scale`, `rotate`, `x`, `y`. A scalar `scale` applies uniformly ; a
- *  `[sx, sy]` pair is collapsed to `sx` (framer takes a single scale on
- *  the motion components used here). `translate: [x, y]` → `x` / `y`. */
-function lowerAnimateState(s: LSMLAnimateState): Record<string, number> {
-  const out: Record<string, number> = {};
+ *  `scale` (or `scaleX`/`scaleY` for a per-axis `[sx, sy]` pair),
+ *  `rotate`, `x`, `y`, `filter` (clamped CSS string, R8).
+ *  `translate: [x, y]` → `x` / `y`. */
+function lowerAnimateState(
+  s: LSMLAnimateState,
+  nodeId: string | undefined,
+  opts: CompileOptions,
+): Record<string, number | string> {
+  const out: Record<string, number | string> = {};
   if (typeof s.opacity === "number") out["opacity"] = s.opacity;
   const t = s.transform;
   if (t) {
     if (t.scale !== undefined) {
-      out["scale"] = Array.isArray(t.scale) ? t.scale[0] : t.scale;
+      if (Array.isArray(t.scale)) {
+        out["scaleX"] = t.scale[0];
+        out["scaleY"] = t.scale[1];
+      } else {
+        out["scale"] = t.scale;
+      }
     }
     if (typeof t.rotate === "number") out["rotate"] = t.rotate;
     if (t.translate !== undefined) {
       out["x"] = t.translate[0];
       out["y"] = t.translate[1];
     }
+  }
+  if (s.filter !== undefined) {
+    out["filter"] = lowerFilter(s.filter, nodeId, "animate.from.filter", opts);
   }
   return out;
 }
@@ -271,6 +582,18 @@ function compileRepeat(node: LSMLRepeat, opts: CompileOptions): RenderNode {
     children: [compiledTemplate],
   };
   if (node.id !== undefined) out.id = node.id;
+  // LSML 1.1 §6.7 — per-iteration stagger. Negative values are invalid ;
+  // the runtime caps the effective delay (STAGGER_CAP_MS) at render.
+  if (node.stagger_ms !== undefined) {
+    if (
+      typeof node.stagger_ms !== "number" ||
+      !Number.isFinite(node.stagger_ms) ||
+      node.stagger_ms < 0
+    ) {
+      throw invalid(node.id, "stagger_ms", "must be a finite number >= 0");
+    }
+    out.stagger_ms = node.stagger_ms;
+  }
   return out;
 }
 
