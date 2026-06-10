@@ -11,6 +11,7 @@ export {
   MAX_PATH_SUBPATHS,
   MAX_PATH_COMMANDS,
   type CompileOptions,
+  type CompileDiagnostic,
 } from "./compile.js";
 export { canonicalize, hashBundle, ZERO_HASH } from "./canonicalize.js";
 export type {
