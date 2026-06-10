@@ -69,9 +69,7 @@ function compileFilter(
 
 describe("path scanner — pathological number forms", () => {
   it("accepts multi-digit exponent (1e9, 2.5E+3)", () => {
-    expect(() =>
-      validatePathData("M1e9,2.5E+3 L0,0 Z", "n", "pathData"),
-    ).not.toThrow();
+    expect(() => validatePathData("M1e9,2.5E+3 L0,0 Z", "n", "pathData")).not.toThrow();
   });
 
   it("rejects double-dot numbers (1.2.3) — not in the allowlist grammar", () => {
@@ -81,23 +79,17 @@ describe("path scanner — pathological number forms", () => {
     // we document it and ensure no injection occurs (no letters outside
     // the allowlist sneak through alongside).
     // The important property: no crash, no regex path.
-    expect(() =>
-      validatePathData("M1.2.3,4 L0,0 Z", "n", "pathData"),
-    ).not.toThrow(); // allowed by char-level scanner (known limitation)
+    expect(() => validatePathData("M1.2.3,4 L0,0 Z", "n", "pathData")).not.toThrow(); // allowed by char-level scanner (known limitation)
   });
 
   it("accepts sign sequences (+5, -3) in coordinates", () => {
     // +-+ is not valid SVG but the char-level scanner allows + and - anywhere.
     // Verify it does NOT crash and does NOT throw (char allowlist is permissive).
-    expect(() =>
-      validatePathData("M+5,-3 L+-+5,0 Z", "n", "pathData"),
-    ).not.toThrow();
+    expect(() => validatePathData("M+5,-3 L+-+5,0 Z", "n", "pathData")).not.toThrow();
   });
 
   it("accepts consecutive commas (scanner is char-level, not grammar-level)", () => {
-    expect(() =>
-      validatePathData("M0,,0 L1,1 Z", "n", "pathData"),
-    ).not.toThrow();
+    expect(() => validatePathData("M0,,0 L1,1 Z", "n", "pathData")).not.toThrow();
   });
 
   it("rejects unicode code points (U+2212 MINUS SIGN)", () => {
@@ -117,9 +109,7 @@ describe("path scanner — pathological number forms", () => {
   });
 
   it("accepts path with only newline / tab / CR as whitespace between tokens", () => {
-    expect(() =>
-      validatePathData("M0,0\r\nL1,1\tZ", "n", "pathData"),
-    ).not.toThrow();
+    expect(() => validatePathData("M0,0\r\nL1,1\tZ", "n", "pathData")).not.toThrow();
   });
 });
 
@@ -186,9 +176,13 @@ describe("path scanner — off-by-one cap boundaries", () => {
     const prefix = "M0,0 ";
     const chunk = "L1,1 ";
     const suffix = "Z";
-    const fill = chunk.repeat(1637); // 8185 - 5 - 1 = 8179, +5 = 8184, no...
-    // Simpler approach: build to 8191 then add one allowed char (space):
-    let d = prefix + chunk.repeat(Math.floor((MAX_PATH_SUBPATH_BYTES - prefix.length - suffix.length) / chunk.length)) + suffix;
+    // Build to just under the cap, then pad with spaces to hit it exactly:
+    let d =
+      prefix +
+      chunk.repeat(
+        Math.floor((MAX_PATH_SUBPATH_BYTES - prefix.length - suffix.length) / chunk.length),
+      ) +
+      suffix;
     // Trim or pad with spaces to hit exactly 8192
     if (d.length < MAX_PATH_SUBPATH_BYTES) {
       // Pad with spaces (valid whitespace)
@@ -226,16 +220,14 @@ describe("path scanner — off-by-one cap boundaries", () => {
 
   it("accepts exactly MAX_PATH_SUBPATHS subpaths", () => {
     const paths = Array.from({ length: MAX_PATH_SUBPATHS }, () => ({ data: "M0,0 L1,1 Z" }));
-    expect(() =>
-      compileBundle(bundle({ kind: "shape", geometry: "path", paths })),
-    ).not.toThrow();
+    expect(() => compileBundle(bundle({ kind: "shape", geometry: "path", paths }))).not.toThrow();
   });
 
   it("rejects MAX_PATH_SUBPATHS + 1 subpaths (65)", () => {
     const paths = Array.from({ length: MAX_PATH_SUBPATHS + 1 }, () => ({ data: "M0,0 L1,1 Z" }));
-    expect(() =>
-      compileBundle(bundle({ kind: "shape", geometry: "path", paths })),
-    ).toThrow(/subpath cap/);
+    expect(() => compileBundle(bundle({ kind: "shape", geometry: "path", paths }))).toThrow(
+      /subpath cap/,
+    );
   });
 });
 
@@ -300,29 +292,25 @@ describe("filter clamps — exact boundary values (R8)", () => {
     expect(warns.some((w) => w.includes("brightness") && w.includes("clamped"))).toBe(true);
   });
 
-  it("rejects -0 for blur (negative zero is < 0 in isFinite check? — actually -0 >= 0)", () => {
-    // Object.is(-0, 0) is false but -0 >= 0 is TRUE in JS.
-    // So -0 should be ACCEPTED by the gate (blur = -0 → blur = 0).
-    const warns: string[] = [];
-    const result = compileFilter({ blur: -0 }, warns);
-    expect(result).toBe("blur(0px) brightness(1)");
-    expect(warns).toEqual([]);
+  it("rejects -0 for blur (negative zero, `-0 < 0` is false in IEEE-754)", () => {
+    // A plain `< 0` gate misses -0 ; the compiler closes the hole with
+    // Object.is(v, -0), so -0 is rejected like any other negative (R8).
+    expect(() => compileFilter({ blur: -0 })).toThrow(/blur/);
   });
 
-  it("rejects -0 for brightness (same: -0 >= 0, accepted — KNOWN GAP: emits brightness(0) not brightness(1))", () => {
-    // BUG REPORT FOR FORGE (do not fix here):
-    // `brightness: -0` passes the `f.brightness < 0` guard because
-    // `-0 < 0` is `false` in IEEE-754 JS. The value is then stored as
-    // `brightness = -0` and emitted as `brightness(0)` (not the identity 1).
-    // This produces an invisible element. The gate should use
-    // `Object.is(f.brightness, -0)` or `1/f.brightness === -Infinity`
-    // to catch negative zero, or substitute the default (1) explicitly.
-    // Until fixed, this test documents the ACTUAL (broken) behavior.
+  it("rejects -0 for brightness (would otherwise emit brightness(0) — black element)", () => {
+    // Gap found by Probe, fixed on PR #39 : `brightness: -0` used to pass
+    // the `< 0` guard and stringify to `brightness(0)`, silently blacking
+    // out the element. Now a hard compile error (R8), value never echoed
+    // in the message (R9).
+    expect(() => compileFilter({ brightness: -0 })).toThrow(/brightness/);
+  });
+
+  it("still accepts +0 for blur and brightness (only NEGATIVE zero is rejected)", () => {
     const warns: string[] = [];
-    const result = compileFilter({ brightness: -0 }, warns);
-    // ACTUAL: emits brightness(0) — the gate misses -0
+    const result = compileFilter({ blur: 0, brightness: 0 }, warns);
     expect(result).toBe("blur(0px) brightness(0)");
-    expect(warns).toEqual([]); // no clamp warn either: -0 is < MAX_FILTER_BRIGHTNESS
+    expect(warns).toEqual([]);
   });
 
   it("rejects NaN for blur", () => {

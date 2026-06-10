@@ -346,6 +346,15 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
 // rejects `url(`, `data:`, `<` and `&` by construction (none of their
 // characters are in the allowlist). Implemented as a single-pass manual
 // scanner — linear time, no regex, no backtracking (anti-ReDoS, RC#12).
+//
+// Known limitation (by design) : the scanner is CHAR-LEVEL, not a number
+// grammar. Malformed numerics built from allowlisted characters (`1.2.3`,
+// `+-+5`, overflow exponents like `1e9999`) pass validation. This is
+// accepted : a syntactically invalid `d` is simply ignored by the
+// browser's SVG path parser (the path does not render), so there is no
+// injection or DoS vector — only the author's own shape failing to draw.
+// Upgrading to a full number grammar would add parser complexity for no
+// security gain.
 const PATH_COMMANDS = new Set("MmLlHhVvCcSsQqTtAaZz");
 
 function isPathNumberChar(ch: string): boolean {
@@ -435,7 +444,13 @@ function lowerFilter(
   let blur = 0;
   let brightness = 1;
   if (f.blur !== undefined) {
-    if (typeof f.blur !== "number" || !Number.isFinite(f.blur) || f.blur < 0) {
+    // `-0 < 0` is false in IEEE-754 — Object.is closes the negative-zero hole.
+    if (
+      typeof f.blur !== "number" ||
+      !Number.isFinite(f.blur) ||
+      f.blur < 0 ||
+      Object.is(f.blur, -0)
+    ) {
       throw invalid(nodeId, `${field}.blur`, "must be a finite number >= 0 (R8)");
     }
     blur = f.blur;
@@ -445,7 +460,14 @@ function lowerFilter(
     }
   }
   if (f.brightness !== undefined) {
-    if (typeof f.brightness !== "number" || !Number.isFinite(f.brightness) || f.brightness < 0) {
+    // Same -0 gate as blur : `brightness(-0)` stringifies to `brightness(0)`,
+    // a fully black element slipping past the negative-value rejection (R8).
+    if (
+      typeof f.brightness !== "number" ||
+      !Number.isFinite(f.brightness) ||
+      f.brightness < 0 ||
+      Object.is(f.brightness, -0)
+    ) {
       throw invalid(nodeId, `${field}.brightness`, "must be a finite number >= 0 (R8)");
     }
     brightness = f.brightness;
