@@ -34,6 +34,7 @@ export type {
   OperatorInput,
   ExternalAdapter,
   Asset,
+  BundleUrlResolver,
 } from "./render/bundle.js";
 
 // Profile gating (LSML 1.1 §17.3.1 / §17.5.1) — exported so hosts and the
