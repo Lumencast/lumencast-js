@@ -48,6 +48,19 @@ export interface MountOptions {
   testSession?: string;
   /** Required when mode === "test". */
   scene?: string;
+  /** Resolve the absolute URL of a scene's render bundle. Use this when the
+   *  server is not at the default host-root LSDP/1 layout — e.g. reached
+   *  through a gateway prefix. Given `(sceneId, sceneVersion)`, return the
+   *  full URL to fetch, including query string. When omitted, the runtime
+   *  derives `https://<host>/lsdp/v1/scenes/{id}/bundle?v={hash}` from
+   *  `serverUrl` (unchanged v0.4.0 behaviour).
+   *
+   *  @example
+   *  // Orion behind ZabGate:
+   *  resolveBundleUrl: (id, v) =>
+   *    `https://zabgate.cyell.dev/orion/api/v1/scenes/${id}/render-bundle?v=${v}`
+   */
+  resolveBundleUrl?: (sceneId: string, sceneVersion: string) => string;
   onStatus?: (status: LumencastStatus) => void;
   onError?: (err: LumencastError) => void;
   onMetric?: (metric: LumencastMetric) => void;

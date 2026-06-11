@@ -20,7 +20,10 @@ export function mount(options: MountOptions): LumencastHandle {
 
   const store = createStore();
   const baseUrl = deriveBaseUrl(options.serverUrl);
-  const bundleFetcher = createBundleFetcher({ baseUrl });
+  const bundleFetcher = createBundleFetcher({
+    baseUrl,
+    ...(options.resolveBundleUrl !== undefined ? { resolveUrl: options.resolveBundleUrl } : {}),
+  });
 
   const bundleSignal = signal<RenderBundle | null>(null);
   const statusSignal = signal<ConnectionStatus>("disconnected");

@@ -232,12 +232,25 @@ export interface BundleFetcher {
   preload(bundle: RenderBundle): void;
 }
 
+/** Resolves the absolute URL of a scene's render bundle. Supplied by the
+ *  host (`MountOptions.resolveBundleUrl`) when the server is not at the
+ *  default host-root LSDP/1 layout — e.g. reached through a gateway prefix
+ *  (`https://gw/orion/api/v1/scenes/{id}/render-bundle?v={hash}`). */
+export type BundleUrlResolver = (sceneId: string, sceneVersion: string) => string;
+
 export interface BundleFetcherOptions {
   /** Base URL of the server. The fetcher constructs
-   *  `${baseUrl}/lsdp/v1/scenes/{id}/bundle?v={hash}`. */
+   *  `${baseUrl}/lsdp/v1/scenes/{id}/bundle?v={hash}`. Ignored when
+   *  `resolveUrl` is provided. */
   baseUrl: string;
-  /** Path prefix for bundle resolution. Defaults to `/lsdp/v1/scenes`. */
+  /** Path prefix for bundle resolution. Defaults to `/lsdp/v1/scenes`.
+   *  Ignored when `resolveUrl` is provided. */
   pathPrefix?: string;
+  /** When set, takes full control of URL construction — the host owns the
+   *  whole URL (base, path prefix and `/bundle` vs `/render-bundle` suffix).
+   *  Lets a gateway-prefixed server be addressed without changing the
+   *  host-root default. */
+  resolveUrl?: BundleUrlResolver;
   fetchImpl?: typeof fetch;
 }
 
@@ -245,12 +258,21 @@ class FetcherImpl implements BundleFetcher {
   private readonly cache = new Map<string, RenderBundle>();
   private readonly baseUrl: string;
   private readonly pathPrefix: string;
+  private readonly resolveUrl: BundleUrlResolver | undefined;
   private readonly fetchImpl: typeof fetch;
 
   constructor(opts: BundleFetcherOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, "");
     this.pathPrefix = (opts.pathPrefix ?? "/lsdp/v1/scenes").replace(/\/$/, "");
+    this.resolveUrl = opts.resolveUrl;
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
+  }
+
+  private buildUrl(sceneId: string, sceneVersion: string): string {
+    if (this.resolveUrl) {
+      return this.resolveUrl(sceneId, sceneVersion);
+    }
+    return `${this.baseUrl}${this.pathPrefix}/${encodeURIComponent(sceneId)}/bundle?v=${encodeURIComponent(sceneVersion)}`;
   }
 
   preload(bundle: RenderBundle): void {
@@ -264,7 +286,7 @@ class FetcherImpl implements BundleFetcher {
   async get(sceneId: string, sceneVersion: string): Promise<RenderBundle> {
     const cached = this.cache.get(sceneVersion);
     if (cached) return cached;
-    const url = `${this.baseUrl}${this.pathPrefix}/${encodeURIComponent(sceneId)}/bundle?v=${encodeURIComponent(sceneVersion)}`;
+    const url = this.buildUrl(sceneId, sceneVersion);
     const response = await this.fetchImpl(url);
     if (!response.ok) {
       throw new Error(`bundle fetch failed: ${response.status} ${response.statusText}`);
