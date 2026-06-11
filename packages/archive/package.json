@@ -1,6 +1,6 @@
 {
   "name": "@lumencast/archive",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "LSMLZ/1 archive packer + unpacker. Read and write the single-file ZIP container that carries an LSML scene bundle plus its content-addressed assets. Includes a conformance runner against the LSMLZ/1 case suite.",
   "license": "Apache-2.0",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@lumencast/compiler",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "LSML 1.0 / 1.1 → flat RenderBundle compiler. Lets authors write idiomatic LSML and feed it to @lumencast/runtime.",
   "license": "Apache-2.0",
   "type": "module",
