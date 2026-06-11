@@ -251,6 +251,14 @@ export interface BundleFetcherOptions {
    *  Lets a gateway-prefixed server be addressed without changing the
    *  host-root default. */
   resolveUrl?: BundleUrlResolver;
+  /** Resolve the bearer token used to authenticate each bundle GET. The
+   *  render-bundle endpoint is auth-gated identically to the LSDP/1 WS
+   *  subscription, so the fetch carries the same session token as
+   *  `Authorization: Bearer <token>`. Resolved per request so a token swap
+   *  (`setToken`) takes effect on the next fetch ; a `LumencastTokenProvider`
+   *  is awaited. When omitted — or when it resolves to an empty/undefined
+   *  value — no `Authorization` header is sent (v0.5.0 behaviour). */
+  getAuthToken?: () => string | undefined | Promise<string | undefined>;
   fetchImpl?: typeof fetch;
 }
 
@@ -259,13 +267,25 @@ class FetcherImpl implements BundleFetcher {
   private readonly baseUrl: string;
   private readonly pathPrefix: string;
   private readonly resolveUrl: BundleUrlResolver | undefined;
+  private readonly getAuthToken: BundleFetcherOptions["getAuthToken"];
   private readonly fetchImpl: typeof fetch;
 
   constructor(opts: BundleFetcherOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, "");
     this.pathPrefix = (opts.pathPrefix ?? "/lsdp/v1/scenes").replace(/\/$/, "");
     this.resolveUrl = opts.resolveUrl;
+    this.getAuthToken = opts.getAuthToken;
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
+  }
+
+  /** Build the request init carrying the bearer token, if any. Returns
+   *  `undefined` when no token is available — the fetch stays header-less,
+   *  preserving v0.5.0 behaviour. */
+  private async buildInit(): Promise<RequestInit | undefined> {
+    if (!this.getAuthToken) return undefined;
+    const token = await this.getAuthToken();
+    if (!token) return undefined;
+    return { headers: { Authorization: `Bearer ${token}` } };
   }
 
   private buildUrl(sceneId: string, sceneVersion: string): string {
@@ -287,7 +307,8 @@ class FetcherImpl implements BundleFetcher {
     const cached = this.cache.get(sceneVersion);
     if (cached) return cached;
     const url = this.buildUrl(sceneId, sceneVersion);
-    const response = await this.fetchImpl(url);
+    const init = await this.buildInit();
+    const response = init ? await this.fetchImpl(url, init) : await this.fetchImpl(url);
     if (!response.ok) {
       throw new Error(`bundle fetch failed: ${response.status} ${response.statusText}`);
     }

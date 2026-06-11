@@ -126,6 +126,14 @@ export class WsClient {
     void this.openSocket();
   }
 
+  /** Resolve the current session token (the one used for the WS
+   *  subscription). Mirrors `setToken` swaps. Used by the bundle fetcher to
+   *  authenticate the render-bundle GET with the same credential. A
+   *  `LumencastTokenProvider` is awaited. */
+  resolveCurrentToken(): Promise<string> {
+    return resolveToken(this.token);
+  }
+
   /** Send `input` patches to the server. No-op if not connected. */
   sendInput(patches: Patch[]): void {
     if (!this.socket || this.socket.readyState !== this.WebSocketCtor.OPEN) return;

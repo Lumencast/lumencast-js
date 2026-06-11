@@ -20,9 +20,14 @@ export function mount(options: MountOptions): LumencastHandle {
 
   const store = createStore();
   const baseUrl = deriveBaseUrl(options.serverUrl);
+  // The render-bundle endpoint is auth-gated like the LSDP/1 WS. Resolve the
+  // current session token per fetch (mirrors `setToken`) so each bundle GET
+  // carries `Authorization: Bearer <token>`. `ws` is assigned below; the
+  // closure runs only at fetch time, after assignment.
   const bundleFetcher = createBundleFetcher({
     baseUrl,
     ...(options.resolveBundleUrl !== undefined ? { resolveUrl: options.resolveBundleUrl } : {}),
+    getAuthToken: () => ws.resolveCurrentToken(),
   });
 
   const bundleSignal = signal<RenderBundle | null>(null);

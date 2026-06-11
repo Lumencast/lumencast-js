@@ -1,6 +1,6 @@
 {
   "name": "@lumencast/protocol",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "LSDP/1 wire protocol — envelope, codec, sequence, leaf-path utilities, error taxonomy, types. Pure code, no IO.",
   "license": "Apache-2.0",
   "type": "module",
