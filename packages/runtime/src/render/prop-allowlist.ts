@@ -40,6 +40,9 @@ const UNIVERSAL_PROPS = [
   "y",
   "width",
   "height",
+  // ADR 002 §3.2 (#E) — a typed `mask` is lowered onto EVERY primitive by the
+  // compiler and consumed by the Tree (built into a `<mask>` SVG element).
+  "mask",
 ] as const;
 
 function allow(keys: readonly string[]): ReadonlySet<string> {
