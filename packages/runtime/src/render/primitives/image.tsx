@@ -1,13 +1,22 @@
 import { motion } from "framer-motion";
 import type { PrimitiveProps } from "./index";
 import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
+import { gateSrc, useAllowedHosts } from "../allowed-hosts";
 
 /** Image leaf. `src`, `fit` (cover/contain/fill), `position`,
  *  `opacity`. Opacity is animated when a transition is declared. When an
  *  `animate.from` is lowered onto the node, it mounts at that state and
- *  plays to its target on mount (mount-play). */
+ *  plays to its target on mount (mount-play).
+ *
+ *  Security (Bastion T1/T2, ADR 002 #F) : `src` is untrusted (static prop
+ *  OR live LSDP delta) and was placed into the DOM with NO host/scheme
+ *  check until #F (the latent 1.1 hole — `assets.allowedHosts` was declared
+ *  but never enforced). It now passes `gateSrc` BEFORE reaching the `<img>`
+ *  — a rejected host/scheme omits the image entirely (no passthrough), with
+ *  an R9-clean diagnostic. This is the runtime arm of the double-gate. */
 export function Image({ resolved, nodeId, transitionFor, animateInitial }: PrimitiveProps) {
-  const src = resolved.src as string | undefined;
+  const allowedHosts = useAllowedHosts();
+  const src = gateSrc(resolved.src, allowedHosts, "image.src", nodeId);
   if (!src) return null;
   // LSML §4.5 `alt` is required and was silently unrendered until
   // issue #34's allowlist audit surfaced it — now forwarded to the DOM.

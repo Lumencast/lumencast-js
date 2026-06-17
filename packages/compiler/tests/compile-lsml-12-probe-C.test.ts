@@ -39,7 +39,15 @@ import {
 } from "../src/index.js";
 
 function bundle(layout: LSMLNode, lsml: "1.0" | "1.1" | "1.2" = "1.2"): LSMLBundle {
-  return { lsml, scene_id: "t", scene_version: ZERO_HASH, layout };
+  // ADR 002 #F — image-fill `src` is host-gated at lowering ; these probe
+  // fixtures use `cdn.x`, declared here so the fill survives lowering.
+  return {
+    lsml,
+    scene_id: "t",
+    scene_version: ZERO_HASH,
+    layout,
+    assets: { allowedHosts: ["cdn.x"] },
+  };
 }
 
 function compile(layout: LSMLNode, lsmlVer: "1.0" | "1.1" | "1.2" = "1.2") {
@@ -507,12 +515,12 @@ describe("gradient transform — fill lowering edge cases", () => {
 });
 
 // ---------------------------------------------------------------------------
-// auditBundleKeys — `assets` key generates NOT_LOWERED diagnostic
+// auditBundleKeys — `assets` is now consumed + forwarded (ADR 002 #F)
 // ---------------------------------------------------------------------------
-describe("auditBundleKeys — assets key generates NOT_LOWERED diagnostic", () => {
-  it("warns that assets is not lowered by the compiler", () => {
+describe("auditBundleKeys — assets is consumed and forwarded (ADR 002 #F)", () => {
+  it("does NOT warn for assets (it drives the host gate and is forwarded)", () => {
     const warns: string[] = [];
-    compileBundle(
+    const out = compileBundle(
       {
         lsml: "1.2",
         scene_id: "t",
@@ -522,9 +530,10 @@ describe("auditBundleKeys — assets key generates NOT_LOWERED diagnostic", () =
       },
       { onWarn: (m) => warns.push(m) },
     );
-    expect(warns.length).toBe(1);
-    expect(warns[0]).toContain("assets");
-    expect(warns[0]).toContain("not lowered");
+    // assets used to warn NOT_LOWERED ; #F consumes it, so no warning.
+    expect(warns).toEqual([]);
+    // and it lands verbatim in the RenderBundle so the runtime can re-gate.
+    expect(out.assets).toEqual({ allowedHosts: ["cdn.x"] });
   });
 
   it("does not warn when assets is absent", () => {

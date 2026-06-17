@@ -1,4 +1,5 @@
 import { Tree } from "../render/tree";
+import { AllowedHostsProvider } from "../render/allowed-hosts";
 import { ControlPanel } from "../overlay/control";
 import { StatusPill } from "../overlay/status-pill";
 import { useLumencastRuntime } from "../overlay/runtime-context";
@@ -9,7 +10,9 @@ export function ControlMode() {
   const { store, bundle } = useLumencastRuntime();
   return (
     <>
-      <Tree node={bundle.root} store={store} />
+      <AllowedHostsProvider hosts={bundle.assets?.allowedHosts}>
+        <Tree node={bundle.root} store={store} />
+      </AllowedHostsProvider>
       <StatusPill />
       <ControlPanel />
     </>

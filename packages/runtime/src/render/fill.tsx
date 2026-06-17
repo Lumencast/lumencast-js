@@ -12,11 +12,29 @@
 import type { CSSProperties, ReactElement } from "react";
 import { parseCssColor, warnRejectedColor } from "./css-color";
 import { emitDiagnostic } from "./diagnostics";
+import { gateSrc } from "./allowed-hosts";
 
 export interface FillStop {
   offset: number;
   color: string;
   opacity?: number;
+}
+
+/** LSML 1.2 §3.2 closed `objectFit` enum, re-validated at the RUNTIME (the
+ *  compiler is the other arm of the double-gate, Bastion T4). These are
+ *  exactly the legal CSS `object-fit` / `background-size`-mappable values ;
+ *  anything else is omitted + diagnosed, never passed through to inline CSS.
+ *  Kept local to the runtime — the runtime must not import from the
+ *  compiler (the dependency edge points the other way). */
+const OBJECT_FITS = new Set(["cover", "contain", "fill", "none", "scale-down"]);
+
+export type ObjectFit = "cover" | "contain" | "fill" | "none" | "scale-down";
+
+/** Validate an `objectFit` against the closed enum at render. Returns the
+ *  value or `undefined` (caller falls back to the default + diagnoses).
+ *  Never passthrough. */
+export function parseObjectFitRuntime(value: unknown): ObjectFit | undefined {
+  return typeof value === "string" && OBJECT_FITS.has(value) ? (value as ObjectFit) : undefined;
 }
 
 export type Fill =
@@ -32,6 +50,16 @@ export type Fill =
       center?: { x: number; y: number };
       radius?: number;
       stops: FillStop[];
+      opacity?: number;
+    }
+  | {
+      // LSML 1.2 §3.2 — first-class image-fill. `src` is untrusted and is
+      // host/scheme-gated by `gateImageFills` BEFORE this fill is ever
+      // rendered (Bastion T1/T2). `objectFit` is the runtime-revalidated
+      // closed-enum value (T4).
+      kind: "image";
+      src: string;
+      objectFit?: ObjectFit;
       opacity?: number;
     };
 
@@ -56,6 +84,22 @@ export function renderFill(fill: Fill): FillRenderResult {
     // SVG fill-opacity composes with element opacity multiplicatively
     // so we apply both consistently.
     return { defs: [], ref: fill.color };
+  }
+  if (fill.kind === "image") {
+    // LSML 1.2 §3.2 — image-fill on a shape. Rendered as an SVG <pattern>
+    // holding a single <image> that fills the object bounding box ;
+    // `preserveAspectRatio` reproduces the closed-enum `objectFit`. `src`
+    // is pre-gated (T1/T2) by `gateImageFills`, so it is safe to place on
+    // the SVG <image href>. No bundle-derived markup is interpolated — only
+    // the URL string and closed-enum-derived attribute values.
+    const imgId = nextGradientId();
+    const par = objectFitToPreserveAspectRatio(fill.objectFit);
+    const defs = [
+      <pattern key={imgId} id={imgId} patternContentUnits="objectBoundingBox" width="1" height="1">
+        <image href={fill.src} width="1" height="1" preserveAspectRatio={par} />
+      </pattern>,
+    ];
+    return { defs, ref: `url(#${imgId})` };
   }
   const id = nextGradientId();
   if (fill.kind === "linear-gradient") {
@@ -107,18 +151,85 @@ export function renderFill(fill: Fill): FillRenderResult {
   return { defs, ref: `url(#${id})` };
 }
 
-/** Compile an array of Fill into a CSS `background-image` value usable
- * on a `<div>` (frame backgrounds — non-SVG context). Returns the CSS
- * string + opacity. Stops use percentages in CSS gradient syntax. */
+/** Map a closed-enum `objectFit` to the CSS `background-size` keyword that
+ *  reproduces the same fit for a `background-image`. `fill`/`none`/`scale-
+ *  down` have no exact 1:1 `background-size` keyword — we approximate with
+ *  the nearest safe keyword (all from the closed enum, never free input). */
+function objectFitToBackgroundSize(fit: ObjectFit | undefined): string {
+  switch (fit) {
+    case "contain":
+    case "scale-down":
+      return "contain";
+    case "none":
+      return "auto";
+    case "fill":
+      return "100% 100%";
+    case "cover":
+    default:
+      return "cover";
+  }
+}
+
+/** Map a closed-enum `objectFit` to the SVG `<image preserveAspectRatio>`
+ *  value that reproduces the same fit inside a pattern tile. Every returned
+ *  value is a fixed literal (closed enum → fixed mapping) — never free
+ *  input reaching an SVG attribute. */
+function objectFitToPreserveAspectRatio(fit: ObjectFit | undefined): string {
+  switch (fit) {
+    case "contain":
+    case "scale-down":
+      return "xMidYMid meet";
+    case "fill":
+      return "none";
+    case "none":
+      return "xMidYMid meet";
+    case "cover":
+    default:
+      return "xMidYMid slice";
+  }
+}
+
+/** Compile an array of Fill into background CSS usable on a `<div>` (frame
+ * backgrounds — non-SVG context). Returns `backgroundImage` plus, when an
+ * image-fill is present, the matching `backgroundSize`/`backgroundPosition`/
+ * `backgroundRepeat`. Stops use percentages in CSS gradient syntax.
+ *
+ * Image-fill `src` MUST already be host/scheme-gated (`gateImageFills`) —
+ * `backgroundsToCss` assumes the URL is trusted at this point and only
+ * CSS-escapes it for safe interpolation into `url("…")`. */
 export function backgroundsToCss(fills: Fill[], nodeId?: string): CSSProperties {
   // Per §4.12, fills[0] renders on top — CSS background-image stacks
   // first → top-most. Match by passing in the same order.
   const layers = fills.map((f) => fillToCss(f, nodeId)).filter(Boolean) as string[];
   if (layers.length === 0) return {};
-  return { backgroundImage: layers.join(", ") };
+  const css: CSSProperties = { backgroundImage: layers.join(", ") };
+  // When any layer is an image-fill, drive its sizing from the (already
+  // validated) objectFit. A single image-fill is the common cover case ;
+  // for the first image-fill we set the background sizing for the whole box.
+  const firstImage = fills.find((f) => f.kind === "image") as
+    | Extract<Fill, { kind: "image" }>
+    | undefined;
+  if (firstImage) {
+    css.backgroundSize = objectFitToBackgroundSize(firstImage.objectFit);
+    css.backgroundPosition = "center";
+    css.backgroundRepeat = "no-repeat";
+  }
+  return css;
+}
+
+/** CSS-escape a (already host-gated) URL for safe interpolation into a
+ *  `url("…")` token — escape backslash and the double-quote that would
+ *  otherwise break out of the quoted string. */
+function cssUrl(src: string): string {
+  return `url("${src.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}")`;
 }
 
 function fillToCss(fill: Fill, nodeId?: string): string | null {
+  if (fill.kind === "image") {
+    // `src` is pre-gated (T1/T2) by `gateImageFills` ; only escape it for
+    // the CSS string context here.
+    return cssUrl(fill.src);
+  }
   // RC#11 — every colour interpolated into an inline CSS string MUST
   // pass the strict parser first (fills/stops arrive from untrusted
   // bundles AND live LSDP deltas). A rejected colour drops the whole
@@ -180,6 +291,13 @@ function cssWithOpacity(color: string, opacity: number): string {
 export function sanitizeFills(fills: Fill[], field: string, nodeId?: string): Fill[] {
   const out: Fill[] = [];
   for (const fill of fills) {
+    // Image-fills carry no colour — they are colour-clean by construction.
+    // Their `src` is gated separately (`gateImageFills`, T1/T2) ; pass them
+    // through here unchanged so `sanitizeFills` only owns colour validation.
+    if (fill.kind === "image") {
+      out.push(fill);
+      continue;
+    }
     if (fill.kind === "solid") {
       const color = parseCssColor(fill.color);
       if (color === null) {
@@ -224,11 +342,54 @@ export function parseFills(value: unknown, field?: string, nodeId?: string): Fil
       }
     }
   }
-  return value.filter(isFill) as Fill[];
+  // Image-fill `objectFit` is re-validated against the closed enum here
+  // (Bastion T4 runtime arm) : a hostile / unknown value is dropped with a
+  // diagnostic and the fill falls back to the default fit — never passed
+  // through to inline CSS. `src` is NOT gated here (it needs the host
+  // allowlist) — `gateImageFills` does that downstream, before render.
+  return value.filter(isFill).map((v) => {
+    const fill = v as Fill;
+    if (fill.kind !== "image") return fill;
+    if (fill.objectFit === undefined) return fill;
+    const fit = parseObjectFitRuntime(fill.objectFit);
+    if (fit === undefined) {
+      emitDiagnostic(
+        nodeId,
+        field !== undefined ? `${field}.objectFit` : "fill.objectFit",
+        "is not a recognised object-fit ; falling back to default (ADR 002 §3.2)",
+      );
+      const { objectFit: _drop, ...rest } = fill;
+      return rest;
+    }
+    return { ...fill, objectFit: fit };
+  });
 }
 
 function isFill(v: unknown): v is Fill {
   if (typeof v !== "object" || v === null) return false;
   const k = (v as { kind?: unknown }).kind;
-  return k === "solid" || k === "linear-gradient" || k === "radial-gradient";
+  if (k === "solid" || k === "linear-gradient" || k === "radial-gradient") return true;
+  // An image-fill must carry a string `src` to be structurally valid ; a
+  // malformed image entry is dropped like any other unrenderable fill.
+  return k === "image" && typeof (v as { src?: unknown }).src === "string";
+}
+
+/**
+ * Drop every image-fill whose `src` fails the host/scheme allowlist
+ * (Bastion T1/T2), BEFORE any image-fill reaches the DOM. A rejected
+ * image-fill is omitted entirely (never a passthrough URL) with an
+ * R9-clean diagnostic emitted by `gateSrc`. Non-image fills pass through
+ * untouched. Call this once, after `parseFills`, with the active
+ * `allowedHosts` from `useAllowedHosts()`.
+ */
+export function gateImageFills(
+  fills: Fill[],
+  allowedHosts: readonly string[] | undefined,
+  field: string,
+  nodeId?: string,
+): Fill[] {
+  return fills.filter((fill) => {
+    if (fill.kind !== "image") return true;
+    return gateSrc(fill.src, allowedHosts, `${field}.src`, nodeId) !== undefined;
+  });
 }
