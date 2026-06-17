@@ -26,12 +26,21 @@ import type {
   LSMLAnimateDirective,
   LSMLAnimateState,
   LSMLBundle,
+  LSMLFill,
   LSMLKeyframes,
+  LSMLMask,
   LSMLNode,
   LSMLPath,
   LSMLRepeat,
   LSMLText,
 } from "./lsml-types.js";
+import {
+  parseBlendMode,
+  parseObjectFit,
+  clampGradientTransform,
+  MASK_TYPES,
+  MASK_OPS,
+} from "./lsml-1_2.js";
 
 /** Structured compile diagnostic (ADR 001 §3.4, issue #34). Per
  *  Bastion R9 it carries node identity + field + static reason and
@@ -55,7 +64,7 @@ export interface CompileOptions {
   onWarn?: (message: string, diagnostic: CompileDiagnostic) => void;
 }
 
-const SUPPORTED_VERSIONS = new Set(["1.0", "1.1"] as const);
+const SUPPORTED_VERSIONS = new Set(["1.0", "1.1", "1.2"] as const);
 
 // --- hard caps (ADR 001 §5.1 R8 + §6 RC#10, threat model Bastion) ------
 //
@@ -134,6 +143,9 @@ const COMMON_NODE_KEYS: ReadonlySet<string> = new Set([
   "rotation",
   "sizing",
   "position",
+  // 1.2+ (ADR 002 §3.2) — universal blend mode + typed mask on every node.
+  "blendMode",
+  "mask",
 ]);
 
 /** Keys `compileRepeat` consumes. `scope` names the iteration scope the
@@ -303,7 +315,8 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
       if (node.background !== undefined) props["background"] = node.background;
       // 1.1 §4.3 + §4.12 — stacked backgrounds (frame.tsx reads
       // `resolved.backgrounds`; array form wins over legacy `background`).
-      if (node.backgrounds !== undefined) props["backgrounds"] = node.backgrounds;
+      if (node.backgrounds !== undefined)
+        props["backgrounds"] = lowerFills(node.backgrounds, node.id, "backgrounds", opts);
       // 1.1 §4.3 — clip children to the frame bounds. The spec default
       // (`true`) is applied runtime-side ; only explicit values forward.
       if (node.clipsContent !== undefined) props["clipsContent"] = node.clipsContent;
@@ -345,7 +358,7 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
       }
       if (node.fill !== undefined) props["fill"] = node.fill;
       // 1.1 §4.6 + §4.12 — stacked fills (shape.tsx reads `resolved.fills`).
-      if (node.fills !== undefined) props["fills"] = node.fills;
+      if (node.fills !== undefined) props["fills"] = lowerFills(node.fills, node.id, "fills", opts);
       // Single stroke lowers to the flat props shape.tsx consumes
       // (`stroke` = colour string, `stroke_width` = number). The previous
       // object forward was silently unrenderable.
@@ -408,6 +421,22 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
   }
   if (node.bindUniversal) {
     for (const [k, v] of Object.entries(node.bindUniversal)) bindings[k] = v;
+  }
+
+  // 1.2+ universal effects (ADR 002 §3.2 ; Bastion T4). Closed enums :
+  // a value outside the allowlist is diagnosed and OMITTED, never
+  // forwarded. The runtime re-validates on the live path (#D/#E).
+  if (node.blendMode !== undefined) {
+    const mode = parseBlendMode(node.blendMode);
+    if (mode === null) {
+      warn(opts, node.id, "blendMode", "is not a recognised mix-blend-mode (ADR 002 §3.2)");
+    } else {
+      props["blendMode"] = mode;
+    }
+  }
+  if (node.mask !== undefined) {
+    const mask = lowerMask(node.mask, node.id, opts);
+    if (mask !== null) props["mask"] = mask;
   }
 
   const children = node.children?.map((c) => compileNode(c, opts));
@@ -666,6 +695,107 @@ function lowerPaths(
       ...(p.windingRule !== undefined ? { windingRule: p.windingRule } : {}),
     };
   });
+}
+
+// --- LSML 1.2 fill + mask lowering (ADR 002 §3.2 ; Bastion T4) ----------
+//
+// Closed-enum + bounded-float gate at lowering. A bad enum value or a
+// malformed gradient transform is diagnosed and the offending FIELD is
+// omitted — the rest of the fill is preserved. Host/scheme allowlist of an
+// image-fill `src` (T1/T2) is enforced by #F at the call site that knows the
+// bundle's `assets.allowedHosts` ; this foundation supplies the typed shape
+// and the enum gate.
+
+/** Lower a `fills[]` / `backgrounds[]` array, validating 1.2 image-fill and
+ *  gradient-transform fields. Unknown fill kinds and stop arrays pass
+ *  through unchanged (they are gated elsewhere). */
+function lowerFills(
+  fills: LSMLFill[],
+  nodeId: string | undefined,
+  field: string,
+  opts: CompileOptions,
+): LSMLFill[] {
+  return fills.map((fill, i) => {
+    if (fill.kind === "image") {
+      const out = { ...fill };
+      if (fill.objectFit !== undefined) {
+        const fit = parseObjectFit(fill.objectFit);
+        if (fit === null) {
+          warn(
+            opts,
+            nodeId,
+            `${field}[${i}].objectFit`,
+            "is not a recognised object-fit (ADR 002 §3.2)",
+          );
+          delete out.objectFit;
+        } else {
+          out.objectFit = fit;
+        }
+      }
+      if (fill.transform !== undefined) {
+        const t = clampGradientTransform(fill.transform);
+        if (t === null) {
+          warn(opts, nodeId, `${field}[${i}].transform`, "is not 6 finite floats (ADR 002 §3.2)");
+          delete out.transform;
+        } else {
+          out.transform = t;
+        }
+      }
+      return out;
+    }
+    if (fill.kind === "linear-gradient" || fill.kind === "radial-gradient") {
+      if (fill.transform === undefined) return fill;
+      const t = clampGradientTransform(fill.transform);
+      if (t === null) {
+        warn(opts, nodeId, `${field}[${i}].transform`, "is not 6 finite floats (ADR 002 §3.2)");
+        const { transform: _drop, ...rest } = fill;
+        return rest;
+      }
+      return { ...fill, transform: t };
+    }
+    return fill;
+  });
+}
+
+/** Lower a typed `mask` (ADR 002 §3.2). Closed enums on `type` / `op` ; a bad
+ *  enum or a malformed `source` discriminant drops the whole mask (it cannot
+ *  be partially honoured). NEVER forwards a free SVG string — `source` is a
+ *  typed discriminated union by construction (Bastion T3). */
+function lowerMask(
+  mask: LSMLMask,
+  nodeId: string | undefined,
+  opts: CompileOptions,
+): LSMLMask | null {
+  if (typeof mask !== "object" || mask === null) {
+    warn(opts, nodeId, "mask", "is not a mask object (ADR 002 §3.2)");
+    return null;
+  }
+  if (!MASK_TYPES.has(mask.type as string)) {
+    warn(opts, nodeId, "mask.type", "is not alpha|luminance (ADR 002 §3.2)");
+    return null;
+  }
+  if (!MASK_OPS.has(mask.op as string)) {
+    warn(opts, nodeId, "mask.op", "is not intersect|subtract|union (ADR 002 §3.2)");
+    return null;
+  }
+  const src = mask.source;
+  const validSource =
+    typeof src === "object" &&
+    src !== null &&
+    ((src.kind === "shape" && typeof (src as { ref?: unknown }).ref === "string") ||
+      (src.kind === "image" && typeof (src as { src?: unknown }).src === "string"));
+  if (!validSource) {
+    warn(opts, nodeId, "mask.source", "is not a typed shape|image source (ADR 002 §3.2)");
+    return null;
+  }
+  // Re-emit only the typed fields, dropping any extraneous keys.
+  return {
+    source: src,
+    type: mask.type,
+    op: mask.op,
+    ...(mask.position !== undefined ? { position: mask.position } : {}),
+    ...(mask.size !== undefined ? { size: mask.size } : {}),
+  };
 }
 
 // --- filter lowering (ADR 001 §5.1 R8 — hard clamps, non-optional) -----

@@ -9,6 +9,63 @@
 //   - Multi-fill `fills[]` on `shape` (§4.6 + §4.12)
 //   - Stacked `backgrounds[]` on `frame` (§4.3)
 //   - Bundle-level `$schema`, `profiles[]` (§17.3)
+//
+// 1.2 additions (additive over 1.1 — a 1.1 bundle stays valid ; ADR 002 §3.2) :
+//   - `blendMode` on every primitive (closed enum → CSS `mix-blend-mode`)
+//   - `mask` on every primitive (typed fields, never a free SVG string)
+//   - first-class image-fill variant on `LSMLFill` (`{ kind: "image"; … }`)
+//     with a closed `objectFit` enum
+//   - gradient `transform` (6 finite, bounded floats — never a free string)
+
+/** 1.2+ — CSS `mix-blend-mode` value, restricted to the closed set faithful
+ *  to Figma minus `PASS_THROUGH` (ADR 002 §3.2 ; Bastion T4). A value outside
+ *  this set is a diagnostic + omission at the compiler, never passthrough. */
+export type LSMLBlendMode =
+  | "normal"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "darken"
+  | "lighten"
+  | "color-dodge"
+  | "color-burn"
+  | "hard-light"
+  | "soft-light"
+  | "difference"
+  | "exclusion"
+  | "hue"
+  | "saturation"
+  | "color"
+  | "luminosity";
+
+/** 1.2+ — how an image-fill / image source is fitted into its box
+ *  (closed enum → CSS `object-fit` ; ADR 002 §3.2 ; Bastion T4). */
+export type LSMLObjectFit = "cover" | "contain" | "fill" | "none" | "scale-down";
+
+/** 1.2+ — masking model (LSML §4.x, ADR 002 §3.2). A node carries a typed
+ *  `mask` whose fields are ALL typed — there is deliberately NO free-form SVG
+ *  string anywhere in this shape (Bastion T3 : the runtime builds `<mask>` /
+ *  `<clipPath>` from these fields, never from author markup). */
+export interface LSMLMask {
+  /** What provides the mask coverage. Either a reference to a sibling shape
+   *  (by id) or an image asset URL. A `kind: "image"` source is re-gated by
+   *  the host/scheme allowlist (T1/T2) before it reaches the DOM. */
+  source: { kind: "shape"; ref: string } | { kind: "image"; src: string };
+  /** Whether the mask reads the source's alpha channel or its luminance. */
+  type: "alpha" | "luminance";
+  /** Boolean composition op against the masked content. */
+  op: "intersect" | "subtract" | "union";
+  /** Optional placement of the mask source within the masked box. */
+  position?: { x: number; y: number };
+  /** Optional explicit size of the mask source. */
+  size?: { w: number; h: number };
+}
+
+/** 1.2+ — a gradient `transform` : the 6 floats of an affine 2×3 matrix
+ *  `[a, b, c, d, e, f]` (ADR 002 §3.2 ; Bastion T4). Carried as typed
+ *  numbers, never a free string ; the compiler clamps each component to a
+ *  finite, bounded value before it reaches `gradientTransform` SVG. */
+export type LSMLGradientTransform = [number, number, number, number, number, number];
 
 export type LSMLPrimitiveKind =
   | "stack"
@@ -41,13 +98,33 @@ export interface LSMLFillStop {
  *  (LSML §4.12). Discriminated on `kind`. */
 export type LSMLFill =
   | { kind: "solid"; color: string; opacity?: number }
-  | { kind: "linear-gradient"; angle_deg?: number; stops: LSMLFillStop[]; opacity?: number }
+  | {
+      kind: "linear-gradient";
+      angle_deg?: number;
+      /** 1.2+ — full affine gradient transform (6 floats). When present it
+       *  supersedes `angle_deg` (ADR 002 §3.2). */
+      transform?: LSMLGradientTransform;
+      stops: LSMLFillStop[];
+      opacity?: number;
+    }
   | {
       kind: "radial-gradient";
       center?: { x: number; y: number };
       radius?: number;
+      /** 1.2+ — full affine gradient transform (6 floats). */
+      transform?: LSMLGradientTransform;
       stops: LSMLFillStop[];
       opacity?: number;
+    }
+  | {
+      /** 1.2+ — first-class image-fill (ADR 002 §3.2). Unifies the frame
+       *  image-background and unblocks the shape image-fill that 1.1 dropped.
+       *  `src` is host/scheme-allowlist-gated (T1/T2) before the DOM. */
+      kind: "image";
+      src: string;
+      objectFit?: LSMLObjectFit;
+      opacity?: number;
+      transform?: LSMLGradientTransform;
     };
 
 /** 1.1+ — one stacked stroke layer (LSML §4.6). */
@@ -151,6 +228,12 @@ export interface LSMLBaseNode {
   sizing?: { x?: "fixed" | "hug" | "fill"; y?: "fixed" | "hug" | "fill" };
   /** 1.1+ — universal position relative to parent (LSML §5.4). */
   position?: { x: number; y: number };
+  /** 1.2+ — CSS `mix-blend-mode` (closed enum ; ADR 002 §3.2). A value
+   *  outside `LSMLBlendMode` is a diagnostic + omission, never passthrough. */
+  blendMode?: LSMLBlendMode;
+  /** 1.2+ — typed mask spec (ADR 002 §3.2). Built into `<mask>`/`<clipPath>`
+   *  by the runtime from typed fields — never from author SVG markup. */
+  mask?: LSMLMask;
   /** Open-ended authoring metadata (LSML §17.4). Runtime ignores. */
   metadata?: Record<string, unknown>;
 }
@@ -290,7 +373,7 @@ export interface LSMLOperatorInput {
 }
 
 export interface LSMLBundle {
-  lsml: "1.0" | "1.1";
+  lsml: "1.0" | "1.1" | "1.2";
   /** 1.1+ — informational schema URL for editor autocomplete (LSML §18.4). */
   $schema?: string;
   scene_id: string;

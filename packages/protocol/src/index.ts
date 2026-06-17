@@ -44,6 +44,8 @@ export {
   substituteScope,
 } from "./leaf-path.js";
 
+export { isHostAllowed, checkHostAllowed, type HostAllowDecision } from "./host-allow.js";
+
 export {
   snapshot,
   delta,
