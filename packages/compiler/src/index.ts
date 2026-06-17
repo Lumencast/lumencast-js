@@ -14,6 +14,17 @@ export {
   type CompileDiagnostic,
 } from "./compile.js";
 export { canonicalize, hashBundle, ZERO_HASH } from "./canonicalize.js";
+
+export {
+  BLEND_MODES,
+  OBJECT_FITS,
+  MASK_TYPES,
+  MASK_OPS,
+  MAX_GRADIENT_TRANSFORM_ABS,
+  parseBlendMode,
+  parseObjectFit,
+  clampGradientTransform,
+} from "./lsml-1_2.js";
 export type {
   LSMLBundle,
   LSMLNode,
@@ -22,6 +33,10 @@ export type {
   LSMLAnimateDirective,
   LSMLFill,
   LSMLFillStop,
+  LSMLBlendMode,
+  LSMLObjectFit,
+  LSMLMask,
+  LSMLGradientTransform,
   LSMLStroke,
   LSMLPath,
   LSMLKeyframes,

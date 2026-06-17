@@ -202,12 +202,16 @@ describe("fixture suite — known spec'd-but-unsupported fields (RC#7)", () => {
       field: "effects",
     },
     {
-      name: "node blendMode (1.2 candidate)",
-      node: { kind: "frame", id: "n", blendMode: "multiply" },
+      // 1.2 (#C) — blendMode is now SUPPORTED ; an out-of-enum value is
+      // diagnosed + omitted (never passthrough). A valid value would NOT warn.
+      name: "node blendMode out-of-enum (1.2 closed enum)",
+      node: { kind: "frame", id: "n", blendMode: "not-a-mode" },
       field: "blendMode",
     },
     {
-      name: "node mask (1.2 candidate)",
+      // 1.2 (#C) — mask is now SUPPORTED ; an untyped string source is
+      // rejected (typed fields only, never a free SVG string).
+      name: "node mask untyped source (1.2 typed mask)",
       node: { kind: "shape", id: "n", geometry: "rect", mask: "ref" },
       field: "mask",
     },
