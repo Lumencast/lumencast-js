@@ -40,6 +40,9 @@ const UNIVERSAL_PROPS = [
   "y",
   "width",
   "height",
+  // ADR 002 §3.2 (D2 / #D) — `blendMode` is consumed universally by the
+  // wrapper (→ CSS `mix-blend-mode`) on every primitive.
+  "blendMode",
 ] as const;
 
 function allow(keys: readonly string[]): ReadonlySet<string> {

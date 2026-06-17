@@ -25,6 +25,8 @@
 
 import type { ReactNode, CSSProperties } from "react";
 
+import { parseBlendMode } from "./blend-mode";
+
 export type SizingMode = "fixed" | "hug" | "fill";
 
 export interface UniversalProps {
@@ -40,6 +42,11 @@ export interface UniversalProps {
   /** ADR 002 §3.1 (D1) — the absolute box's fixed size, applied only
    *  alongside `position`. Omitted → the box hugs its content. */
   size?: { w?: number; h?: number };
+  /** ADR 002 §3.2 (D2 / #D) — a Figma blend mode → CSS `mix-blend-mode`.
+   *  The value is re-validated against the closed enum at render
+   *  (`parseBlendMode`, T4 double-gate) ; anything outside the allowlist
+   *  is omitted, never written to the style. */
+  blendMode?: string;
 }
 
 export interface UniversalWrapperProps extends UniversalProps {
@@ -72,11 +79,18 @@ export function UniversalWrapper({
   sizing,
   position,
   size,
+  blendMode,
   children,
 }: UniversalWrapperProps) {
   if (visible === false) {
     return null; // slot collapses in flex/grid layouts (§5.4)
   }
+
+  // ADR 002 §3.2 (D2 / #D) — re-validate the blend mode against the
+  // closed enum at render (T4 runtime gate). A recognised mode yields a
+  // CSS `mix-blend-mode` keyword ; anything else is `undefined` and never
+  // reaches the style (no free CSS string, no passthrough).
+  const mixBlendMode = parseBlendMode(blendMode);
 
   // No-op fast path — when no universal props are set, render children
   // directly. Lets simple bundles avoid an extra DOM node per primitive.
@@ -87,13 +101,15 @@ export function UniversalWrapper({
   const hasRotation = typeof rotation === "number" && rotation !== 0;
   const hasSizing = sizing?.x !== undefined || sizing?.y !== undefined;
   const hasPosition = position !== undefined;
-  if (!hasOpacity && !hasRotation && !hasSizing && !hasPosition) {
+  const hasBlendMode = mixBlendMode !== undefined;
+  if (!hasOpacity && !hasRotation && !hasSizing && !hasPosition && !hasBlendMode) {
     return <>{children}</>;
   }
 
   const style: CSSProperties = {};
   if (hasOpacity) style.opacity = opacity;
   if (hasRotation) style.transform = `rotate(${rotation}deg)`;
+  if (hasBlendMode) style.mixBlendMode = mixBlendMode as CSSProperties["mixBlendMode"];
 
   // ADR 002 §3.1 (D1) — absolute placement relative to the nearest
   // positioned ancestor. The Tree only forms `position` from a finite

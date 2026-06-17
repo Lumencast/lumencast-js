@@ -113,6 +113,11 @@ function Node({ node, store }: TreeProps): ReactNode {
     sizing: extractSizing(resolved.sizing),
     position: node.kind === "frame" ? undefined : extractPosition(resolved),
     size: node.kind === "frame" ? undefined : extractSize(resolved),
+    // ADR 002 §3.2 (D2 / #D) — `blendMode` is a universal prop on every
+    // primitive ; the wrapper re-validates it against the closed enum
+    // before applying `mix-blend-mode` (T4 runtime gate). Pass the raw
+    // resolved value through ; the wrapper omits anything off the enum.
+    blendMode: typeof resolved.blendMode === "string" ? resolved.blendMode : undefined,
   };
 
   // ADR 002 §3.1 (D1) — a container holding at least one absolutely
