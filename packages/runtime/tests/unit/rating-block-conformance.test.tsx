@@ -81,7 +81,7 @@ const RATING_BLOCK_49_721: RenderNode = {
     width: 50,
     height: 50,
     background: "#1e40af", // representative rating colour (blue = top rating)
-    clipsContent: false,   // Figma frame non-auto-layout — children may overflow
+    clipsContent: false, // Figma frame non-auto-layout — children may overflow
   },
   children: [
     {
@@ -280,7 +280,7 @@ describe("edge-case A — absolute child mixed with flow siblings in a stack", (
       props: { direction: "vertical", gap: 8 },
       children: [
         { kind: "text", id: "flow-a", props: { value: "flow-a" } },
-        { kind: "text", id: "abs",    props: { value: "badge", x: 4, y: 6 } },
+        { kind: "text", id: "abs", props: { value: "badge", x: 4, y: 6 } },
         { kind: "text", id: "flow-b", props: { value: "flow-b" } },
       ],
     });
@@ -332,9 +332,7 @@ describe("edge-case B — negative x/y placement", () => {
       kind: "frame",
       id: "f",
       props: { width: 100, height: 100 },
-      children: [
-        { kind: "text", id: "neg", props: { value: "x", x: -10, y: -5 } },
-      ],
+      children: [{ kind: "text", id: "neg", props: { value: "x", x: -10, y: -5 } }],
     });
     const span = container.querySelector("span")!;
     const wrap = absoluteWrapperOf(span);
