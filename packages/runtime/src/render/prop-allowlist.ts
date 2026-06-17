@@ -22,8 +22,25 @@ import type { RenderKind, RenderNode } from "./bundle";
 import { emitDiagnostic } from "./diagnostics";
 
 /** Universal props consumed by the Tree renderer itself
- *  (`UniversalWrapper`, LSML 1.1 §5.4) on every primitive. */
-const UNIVERSAL_PROPS = ["visible", "opacity", "universal_opacity", "rotation", "sizing"] as const;
+ *  (`UniversalWrapper`, LSML 1.1 §5.4) on every primitive.
+ *
+ *  ADR 002 §3.1 (D1) — `x`/`y` (compiler-flattened LSML `position:{x,y}`)
+ *  and `width`/`height` (flattened `size:{w,h}`) are consumed universally
+ *  for absolute placement : the Tree reads them into the wrapper's
+ *  `position`/`size`, so they are honoured on EVERY primitive, not
+ *  silently dropped. Frame additionally reads them into its own absolute
+ *  box (it lists them explicitly below too — the union is harmless). */
+const UNIVERSAL_PROPS = [
+  "visible",
+  "opacity",
+  "universal_opacity",
+  "rotation",
+  "sizing",
+  "x",
+  "y",
+  "width",
+  "height",
+] as const;
 
 function allow(keys: readonly string[]): ReadonlySet<string> {
   return new Set([...UNIVERSAL_PROPS, ...keys]);

@@ -11,7 +11,7 @@ import type { PrimitiveProps } from "./index";
  *      Mapped to CSS `row-gap` (horizontal stack) or `column-gap`
  *      (vertical stack). Ignored when `wrap` is false.
  */
-export function Stack({ resolved, children }: PrimitiveProps) {
+export function Stack({ resolved, children, establishesContainingBlock }: PrimitiveProps) {
   const direction = (resolved.direction as string) ?? "vertical";
   const gap = numberOr(resolved.gap, 0);
   const wrap = resolved.wrap === true;
@@ -25,6 +25,10 @@ export function Stack({ resolved, children }: PrimitiveProps) {
     flexDirection: isHorizontal ? "row" : "column",
     alignItems: align,
     justifyContent: justify,
+    // ADR 002 §3.1 (D1) — establish a containing block when a child is
+    // absolutely placed, so its `left/top` resolve against this stack.
+    // Untouched for pure auto-layout stacks (RC#2).
+    ...(establishesContainingBlock ? { position: "relative" } : {}),
   };
 
   if (wrap) {

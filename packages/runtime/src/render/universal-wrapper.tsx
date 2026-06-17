@@ -1,6 +1,6 @@
 // Universal-props wrapper (LSML 1.1 §5.4).
 //
-// Every primitive renders inside this wrapper, which applies the four
+// Every primitive renders inside this wrapper, which applies the
 // universal props uniformly :
 //
 //   - `visible: false` → display: none (slot collapses in flex layouts)
@@ -9,6 +9,15 @@
 //   - `rotation` → CSS transform: rotate(<deg>)
 //   - `sizing.x`/`sizing.y` → flex shorthand on the wrapping div, lets
 //     a primitive participate in its parent flex layout's auto-sizing
+//   - `position.{x,y}` → absolute placement relative to the nearest
+//     positioned ancestor (ADR 002 §3.1 / D1) : a child carrying
+//     `position` is taken out of the normal flow and pinned at
+//     `left:x; top:y`. A child WITHOUT `position` keeps the normal flow
+//     untouched (auto-layout intact) — this is the Figma free-form vs
+//     auto-layout duality, honoured at render. `size.{w,h}` fixes the
+//     absolute box (the rating square's 24×7 / 14×22 text boxes) ;
+//     omitted → hug the content. Position is a static layout property and
+//     never animates (it stays off the 0-layout-event broadcast hot path).
 //
 // `bindUniversal` is resolved by the Tree renderer before the wrapper
 // sees its values, so this component only deals with concrete numbers
@@ -23,6 +32,14 @@ export interface UniversalProps {
   opacity?: number;
   rotation?: number;
   sizing?: { x?: SizingMode; y?: SizingMode };
+  /** ADR 002 §3.1 (D1) — parent-relative absolute placement. When set,
+   *  the wrapper pins the primitive at `left:x; top:y` (position:absolute)
+   *  instead of leaving it in the normal flow. Both axes are required
+   *  (the Tree only forms this object from a finite `{x,y}` pair). */
+  position?: { x: number; y: number };
+  /** ADR 002 §3.1 (D1) — the absolute box's fixed size, applied only
+   *  alongside `position`. Omitted → the box hugs its content. */
+  size?: { w?: number; h?: number };
 }
 
 export interface UniversalWrapperProps extends UniversalProps {
@@ -53,6 +70,8 @@ export function UniversalWrapper({
   opacity,
   rotation,
   sizing,
+  position,
+  size,
   children,
 }: UniversalWrapperProps) {
   if (visible === false) {
@@ -61,16 +80,33 @@ export function UniversalWrapper({
 
   // No-op fast path — when no universal props are set, render children
   // directly. Lets simple bundles avoid an extra DOM node per primitive.
+  // A child WITHOUT `position` never enters the absolute branch, so the
+  // normal flow (auto-layout) is left exactly as before (ADR 002 §3.1
+  // non-regression : RC#2).
   const hasOpacity = typeof opacity === "number" && opacity !== 1;
   const hasRotation = typeof rotation === "number" && rotation !== 0;
   const hasSizing = sizing?.x !== undefined || sizing?.y !== undefined;
-  if (!hasOpacity && !hasRotation && !hasSizing) {
+  const hasPosition = position !== undefined;
+  if (!hasOpacity && !hasRotation && !hasSizing && !hasPosition) {
     return <>{children}</>;
   }
 
   const style: CSSProperties = {};
   if (hasOpacity) style.opacity = opacity;
   if (hasRotation) style.transform = `rotate(${rotation}deg)`;
+
+  // ADR 002 §3.1 (D1) — absolute placement relative to the nearest
+  // positioned ancestor. The Tree only forms `position` from a finite
+  // `{x,y}` pair, so the two numbers reach inline CSS as plain px with
+  // no untrusted-value passthrough. `size` (when present) fixes the box ;
+  // otherwise the box hugs its content.
+  if (hasPosition) {
+    style.position = "absolute";
+    style.left = position.x;
+    style.top = position.y;
+    if (typeof size?.w === "number") style.width = size.w;
+    if (typeof size?.h === "number") style.height = size.h;
+  }
 
   // sizing.x / sizing.y map to flex / row-flex behaviour. The
   // x-axis applies along the main axis of a horizontal stack ; the
