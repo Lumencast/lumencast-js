@@ -174,8 +174,12 @@ describe("T1 — allowlist with non-string entries (defensive)", () => {
   it("skips non-string entries and falls through to string matches", () => {
     // The implementation guards `typeof entry === 'string'`. A non-string entry
     // must never cause a throw or a false positive.
-    expect(isHostAllowed("https://cdn.lumencast.dev/a.png", [42 as never, "cdn.lumencast.dev"])).toBe(true);
-    expect(isHostAllowed("https://cdn.lumencast.dev/a.png", [42 as never, null as never])).toBe(false);
+    expect(
+      isHostAllowed("https://cdn.lumencast.dev/a.png", [42 as never, "cdn.lumencast.dev"]),
+    ).toBe(true);
+    expect(isHostAllowed("https://cdn.lumencast.dev/a.png", [42 as never, null as never])).toBe(
+      false,
+    );
   });
 
   it("does not throw on a fully non-string allowlist", () => {
@@ -346,9 +350,21 @@ describe("isHostAllowed — never throws on adversarial inputs", () => {
 
   it("never returns true for non-https, non-allowed-data adversarial inputs", () => {
     const hostile = [
-      null, undefined, 0, NaN, Infinity, {}, [],
-      "\x00", "://noscheme", "//cdn.lumencast.dev/a.png",
-      "   ", "\t\n\r", "data:", "data:image/", "data:image/png",
+      null,
+      undefined,
+      0,
+      NaN,
+      Infinity,
+      {},
+      [],
+      "\x00",
+      "://noscheme",
+      "//cdn.lumencast.dev/a.png",
+      "   ",
+      "\t\n\r",
+      "data:",
+      "data:image/",
+      "data:image/png",
     ] as unknown[];
     for (const input of hostile) {
       expect(isHostAllowed(input, ALLOWED)).toBe(false);

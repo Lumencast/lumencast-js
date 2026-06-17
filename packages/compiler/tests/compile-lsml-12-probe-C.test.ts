@@ -53,10 +53,7 @@ function compile(layout: LSMLNode, lsmlVer: "1.0" | "1.1" | "1.2" = "1.2") {
 // ---------------------------------------------------------------------------
 describe("retro-compat — LSML 1.0 compiles unchanged (0 warnings)", () => {
   it("1.0 shape/fill compiles without warnings", () => {
-    const { warns, root } = compile(
-      { kind: "shape", geometry: "rect", fill: "#ff0000" },
-      "1.0",
-    );
+    const { warns, root } = compile({ kind: "shape", geometry: "rect", fill: "#ff0000" }, "1.0");
     expect(warns).toEqual([]);
     expect(root.props?.["fill"]).toBe("#ff0000");
   });
@@ -443,7 +440,10 @@ describe("gradient transform — fill lowering edge cases", () => {
       fills: [
         {
           kind: "radial-gradient",
-          stops: [{ offset: 0, color: "#000" }, { offset: 1, color: "#fff" }],
+          stops: [
+            { offset: 0, color: "#000" },
+            { offset: 1, color: "#fff" },
+          ],
           transform: [1, 0, 0, 1, 50, 50],
         },
       ],
