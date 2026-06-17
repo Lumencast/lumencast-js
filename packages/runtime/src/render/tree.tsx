@@ -94,13 +94,35 @@ function Node({ node, store }: TreeProps): ReactNode {
   // primitives. Pulled out of `resolved` so primitives can ignore
   // them ; the wrapper composes with whatever transform/opacity the
   // primitive's own framer-motion may apply.
+  //
+  // ADR 002 §3.1 (D1) — absolute placement. The compiler flattens LSML
+  // `position:{x,y}` → `resolved.x`/`resolved.y` and `size:{w,h}` →
+  // `resolved.width`/`resolved.height` on EVERY primitive (compile.ts
+  // §universal-props). The wrapper consumes them as absolute placement,
+  // EXCEPT on `frame` : a frame already positions itself (it reads
+  // `x`/`y`/`width`/`height` into its own absolute box + transform), so
+  // letting the wrapper pin it too would double the offset. Every other
+  // kind (text/shape/image/media/instance/stack/grid) is placed by the
+  // wrapper. A node without `x`/`y` gets `position: undefined` → normal
+  // flow (RC#2 non-regression).
   const universal = {
     visible: typeof resolved.visible === "boolean" ? resolved.visible : undefined,
     opacity:
       typeof resolved.universal_opacity === "number" ? resolved.universal_opacity : undefined,
     rotation: typeof resolved.rotation === "number" ? resolved.rotation : undefined,
     sizing: extractSizing(resolved.sizing),
+    position: node.kind === "frame" ? undefined : extractPosition(resolved),
+    size: node.kind === "frame" ? undefined : extractSize(resolved),
   };
+
+  // ADR 002 §3.1 (D1) — a container holding at least one absolutely
+  // positioned child must establish the containing block so the child's
+  // `left/top` resolve against it (and not a distant ancestor). `Frame`
+  // is already `position:absolute` ; `Stack`/`Grid` flip to
+  // `position:relative` only when needed (no change for pure auto-layout
+  // boards — RC#2). Threaded to the primitive so the layout container
+  // decides ; a node without absolute children is untouched.
+  const hasAbsoluteChild = node.children?.some(childIsAbsolute) ?? false;
 
   // Merge live-interpolated colour values (§6.5) over the resolved
   // props — the primitive re-validates them through `parseCssColor`.
@@ -116,6 +138,7 @@ function Node({ node, store }: TreeProps): ReactNode {
         nodeId={node.id}
         transitionFor={transitionFor}
         animateInitial={node.animate_initial}
+        establishesContainingBlock={hasAbsoluteChild}
       >
         {children}
       </Primitive>
@@ -154,6 +177,46 @@ function extractSizing(value: unknown): { x?: SizingMode; y?: SizingMode } | und
   if (obj.x === "fixed" || obj.x === "hug" || obj.x === "fill") out.x = obj.x;
   if (obj.y === "fixed" || obj.y === "hug" || obj.y === "fill") out.y = obj.y;
   return out.x !== undefined || out.y !== undefined ? out : undefined;
+}
+
+function finite(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+/** ADR 002 §3.1 (D1) — form the absolute-placement `position:{x,y}` from
+ *  the compiler-flattened `resolved.x`/`resolved.y`. BOTH axes must be
+ *  finite numbers : a partial or malformed pair yields `undefined` (the
+ *  node stays in the normal flow — RC#3 mistyped-position is inert, not
+ *  injected). Values are plain numbers, never untrusted strings. */
+function extractPosition(resolved: Record<string, unknown>): { x: number; y: number } | undefined {
+  const x = finite(resolved.x);
+  const y = finite(resolved.y);
+  if (x === undefined || y === undefined) return undefined;
+  return { x, y };
+}
+
+/** ADR 002 §3.1 (D1) — the absolute box size from `resolved.width`/
+ *  `resolved.height`. Only meaningful alongside `position` (the wrapper
+ *  ignores it otherwise). Partial sizes are allowed (one axis hugs). */
+function extractSize(resolved: Record<string, unknown>): { w?: number; h?: number } | undefined {
+  const w = finite(resolved.width);
+  const h = finite(resolved.height);
+  if (w === undefined && h === undefined) return undefined;
+  return { w, h };
+}
+
+/** True when a child node carries a finite `{x,y}` absolute position
+ *  (static prop OR a bound `x`/`y`). Used by a container primitive to
+ *  decide whether to establish a positioned containing block. A bound
+ *  position is treated as "absolute" structurally — the key presence is
+ *  static even if the value moves live. */
+function childIsAbsolute(child: RenderNode): boolean {
+  if (child.kind === "frame") return false; // a frame positions itself
+  const props = child.props ?? {};
+  const bindings = child.bindings ?? {};
+  const hasX = finite(props.x) !== undefined || "x" in bindings;
+  const hasY = finite(props.y) !== undefined || "y" in bindings;
+  return hasX && hasY;
 }
 
 function Repeat({ node, store }: TreeProps): ReactNode {

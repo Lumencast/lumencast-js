@@ -29,6 +29,13 @@ export interface PrimitiveProps {
    *  element mounts in this state and animates to its rendered target on
    *  mount (mount-play). `undefined` → no `initial` (no mount-play). */
   animateInitial?: Record<string, number | string>;
+  /** ADR 002 §3.1 (D1) — set by the Tree when this node has at least one
+   *  absolutely positioned child. A layout container (`stack`/`grid`)
+   *  flips to `position: relative` so its children's `left/top` resolve
+   *  against it. `frame` is already `position: absolute` (a containing
+   *  block) and ignores it ; leaf primitives have no children and ignore
+   *  it too. `false`/absent → no change (pure auto-layout, RC#2). */
+  establishesContainingBlock?: boolean;
   children?: ReactNode;
 }
 
