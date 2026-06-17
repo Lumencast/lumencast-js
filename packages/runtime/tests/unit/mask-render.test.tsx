@@ -142,7 +142,7 @@ describe("mask render — image source host gate (T1/T2)", () => {
         type: "alpha",
         op: "intersect",
       }),
-      (t) => <AllowedHostsProvider allowedHosts={ALLOWED}>{t}</AllowedHostsProvider>,
+      (t) => <AllowedHostsProvider hosts={ALLOWED}>{t}</AllowedHostsProvider>,
     );
     expect(container.querySelector("mask image")?.getAttribute("href")).toBe(
       "https://cdn.example.com/m.png",
@@ -156,7 +156,7 @@ describe("mask render — image source host gate (T1/T2)", () => {
         type: "alpha",
         op: "intersect",
       }),
-      (t) => <AllowedHostsProvider allowedHosts={ALLOWED}>{t}</AllowedHostsProvider>,
+      (t) => <AllowedHostsProvider hosts={ALLOWED}>{t}</AllowedHostsProvider>,
     );
     expect(container.querySelector("mask")).toBeNull();
     expect(container.querySelector("image")).toBeNull();
@@ -176,7 +176,7 @@ describe("mask render — image source host gate (T1/T2)", () => {
         type: "alpha",
         op: "intersect",
       }),
-      (t) => <AllowedHostsProvider allowedHosts={ALLOWED}>{t}</AllowedHostsProvider>,
+      (t) => <AllowedHostsProvider hosts={ALLOWED}>{t}</AllowedHostsProvider>,
     );
     expect(container.querySelector("mask")).toBeNull();
     expect(container.querySelector("image")).toBeNull();
@@ -220,7 +220,7 @@ describe("mask render — T3 no executable markup from the bundle", () => {
         type: "alpha",
         op: "intersect",
       }),
-      (t) => <AllowedHostsProvider allowedHosts={["cdn.example.com"]}>{t}</AllowedHostsProvider>,
+      (t) => <AllowedHostsProvider hosts={["cdn.example.com"]}>{t}</AllowedHostsProvider>,
     );
     // Even if the URL parsed, the malicious tail is part of the href STRING,
     // never parsed as markup : no script / foreignObject element exists.
