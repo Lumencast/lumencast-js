@@ -21,7 +21,17 @@ import {
 } from "../src/index.js";
 
 function bundle(layout: LSMLNode, lsml: "1.0" | "1.1" | "1.2" = "1.2"): LSMLBundle {
-  return { lsml, scene_id: "t", scene_version: ZERO_HASH, layout };
+  // ADR 002 #F — image-fill `src` is host/scheme-gated at lowering
+  // (Bastion T1/T2). These fixtures use `cdn.x`, so the bundle declares it
+  // in `assets.allowedHosts` ; deny-by-default rejection is proven by the
+  // dedicated host-allow lowering suite, not here.
+  return {
+    lsml,
+    scene_id: "t",
+    scene_version: ZERO_HASH,
+    layout,
+    assets: { allowedHosts: ["cdn.x"] },
+  };
 }
 
 function compile(layout: LSMLNode): {

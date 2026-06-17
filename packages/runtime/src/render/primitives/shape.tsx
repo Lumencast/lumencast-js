@@ -2,9 +2,10 @@ import { motion } from "framer-motion";
 import type { ReactElement } from "react";
 import type { PrimitiveProps } from "./index";
 import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
-import { parseFills, renderFill, sanitizeFills } from "../fill";
+import { parseFills, renderFill, sanitizeFills, gateImageFills } from "../fill";
 import { parseCssColor, warnRejectedColor } from "../css-color";
 import { parseShapePaths, type SubPath } from "../svg-path";
+import { useAllowedHosts } from "../allowed-hosts";
 
 interface StrokeSpec {
   color?: string;
@@ -50,8 +51,14 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
   // LSML 1.1 §4.6 — `fills[]` is the preferred multi-fill form. Fall
   // back to the singular `fill` for 1.0 bundles. Colours are strict-
   // validated (a rejected colour drops its layer, with diagnostic).
-  const fills = sanitizeFills(
-    parseFills(resolved.fills, "shape.fills", nodeId),
+  // LSML 1.2 §3.2 — image-fill `src` is host/scheme-gated (Bastion T1/T2)
+  // BEFORE any URL reaches an SVG <image href>. A rejected image-fill is
+  // dropped (no passthrough) with an R9-clean diagnostic. Colour fills go
+  // through `sanitizeFills` (RC#11) ; image fills pass it through untouched.
+  const allowedHosts = useAllowedHosts();
+  const fills = gateImageFills(
+    sanitizeFills(parseFills(resolved.fills, "shape.fills", nodeId), "shape.fills", nodeId),
+    allowedHosts,
     "shape.fills",
     nodeId,
   );
