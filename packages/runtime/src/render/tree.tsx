@@ -15,6 +15,8 @@ import { StaggerContext, computeStaggerDelayMs } from "./stagger-context";
 import { useBindAnimate } from "./bind-animate";
 import { checkNodeProps } from "./prop-allowlist";
 import { emitDiagnostic } from "./diagnostics";
+import { buildMask, parseMaskSpec } from "./mask";
+import { useAllowedHosts } from "./allowed-hosts";
 
 export interface TreeProps {
   node: RenderNode;
@@ -34,6 +36,9 @@ function Node({ node, store }: TreeProps): ReactNode {
   // re-renders only fire on touched paths.
   useSignals();
   const scope = usePathScope();
+  // ADR 002 §3.2 (#E) — the bundle's host allowlist, for gating an image
+  // mask source (T1/T2). `undefined` = deny every remote host.
+  const allowedHosts = useAllowedHosts();
 
   // Hooks must run unconditionally — the early-return for unknown
   // kinds happens *after* every hook has fired.
@@ -149,6 +154,27 @@ function Node({ node, store }: TreeProps): ReactNode {
       </Primitive>
     </UniversalWrapper>
   );
+
+  // ADR 002 §3.2 (#E) — a typed `mask` lowered onto the node becomes a real
+  // `<mask>` SVG element + a CSS `mask: url(#…)` on a wrapping div. The mask
+  // is built ENTIRELY from typed fields (T3 : never markup from the bundle) ;
+  // its enums are re-validated (T4) and an image source is host-gated (T1/T2)
+  // before any `href`. A rejected / malformed mask is omitted (body renders
+  // unmasked) with a diagnostic — never passthrough.
+  if (resolved.mask !== undefined) {
+    const spec = parseMaskSpec(resolved.mask, node.id);
+    const built = spec ? buildMask(spec, allowedHosts, node.id) : null;
+    if (built) {
+      body = (
+        <div style={built.style}>
+          <svg width={0} height={0} style={{ position: "absolute" }} aria-hidden>
+            <defs>{built.def}</defs>
+          </svg>
+          {body}
+        </div>
+      );
+    }
+  }
 
   // Scalar bindAnimate channels apply on a wrapping motion.div (same
   // composition model as UniversalWrapper). Motion values mutate the

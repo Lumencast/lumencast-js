@@ -43,6 +43,9 @@ const UNIVERSAL_PROPS = [
   // ADR 002 §3.2 (D2 / #D) — `blendMode` is consumed universally by the
   // wrapper (→ CSS `mix-blend-mode`) on every primitive.
   "blendMode",
+  // ADR 002 §3.2 (#E) — a typed `mask` is lowered onto EVERY primitive by the
+  // compiler and consumed by the Tree (built into a `<mask>` SVG element).
+  "mask",
 ] as const;
 
 function allow(keys: readonly string[]): ReadonlySet<string> {
