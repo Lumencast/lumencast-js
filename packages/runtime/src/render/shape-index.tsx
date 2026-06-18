@@ -9,9 +9,11 @@
 // threads it to the Tree via a plain React context (the bundle is immutable and
 // content-addressed, so a mount-stable context is the right tool).
 //
-// ── Invariants (A2.1) ────────────────────────────────────────────────
-//  - Only `kind:"shape"` nodes carrying an `id` are indexed (the only legal
-//    mask shape-source target ; #K mapper only emits `id` on referenced shapes).
+// ── Invariants (A2.1 / A4.3) ─────────────────────────────────────────
+//  - A `kind:"shape"` node carrying an `id` (shape-source target, #K) OR a
+//    `kind:"frame"` node carrying an `id` (group/frame-source target, #O —
+//    a GROUP and a FRAME container both lower to `frame`) is indexed. The
+//    mapper only emits `id` on actually-referenced nodes (no inflation).
 //  - Uniqueness : two nodes claiming the same `id` is a build-time defect. The
 //    FIRST occurrence wins and a diagnostic is emitted for each collision
 //    (never the id value beyond the field tag — R9-clean field only).
@@ -28,8 +30,10 @@ const EMPTY: ShapeIndex = new Map();
 const ShapeIndexCtx = createContext<ShapeIndex>(EMPTY);
 
 /**
- * Walk the bundle tree once and index every `kind:"shape"` node that carries
- * an `id`. Collisions keep the first occurrence and diagnose the rest.
+ * Walk the bundle tree once and index every referenceable node — a
+ * `kind:"shape"` (shape-source, #K) or a `kind:"frame"` (group/frame-source,
+ * #O) — that carries an `id`. Collisions keep the first occurrence and
+ * diagnose the rest.
  *
  * The walk descends `children` only (the render tree's structural edges) ; it
  * never reads `node.mask`, so building the index can never trigger mask
@@ -42,7 +46,8 @@ export function buildShapeIndex(root: RenderNode | undefined): ShapeIndex {
   const stack: RenderNode[] = [root];
   while (stack.length > 0) {
     const node = stack.pop() as RenderNode;
-    if (node.kind === "shape" && typeof node.id === "string" && node.id.length > 0) {
+    const referenceable = node.kind === "shape" || node.kind === "frame";
+    if (referenceable && typeof node.id === "string" && node.id.length > 0) {
       if (index.has(node.id)) {
         emitDiagnostic(
           node.id,

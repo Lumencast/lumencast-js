@@ -47,10 +47,15 @@ export type LSMLObjectFit = "cover" | "contain" | "fill" | "none" | "scale-down"
  *  string anywhere in this shape (Bastion T3 : the runtime builds `<mask>` /
  *  `<clipPath>` from these fields, never from author markup). */
 export interface LSMLMask {
-  /** What provides the mask coverage. Either a reference to a sibling shape
-   *  (by id) or an image asset URL. A `kind: "image"` source is re-gated by
-   *  the host/scheme allowlist (T1/T2) before it reaches the DOM. */
-  source: { kind: "shape"; ref: string } | { kind: "image"; src: string };
+  /** What provides the mask coverage. A reference to a sibling shape (by id),
+   *  an image asset URL, or a reference to a sibling GROUP/FRAME container (by
+   *  id) whose visible children's geometry is composited (ADR 002 A4.3). A
+   *  `kind: "image"` source is re-gated by the host/scheme allowlist (T1/T2)
+   *  before it reaches the DOM. */
+  source:
+    | { kind: "shape"; ref: string }
+    | { kind: "image"; src: string }
+    | { kind: "group"; ref: string };
   /** Whether the mask reads the source's alpha channel or its luminance. */
   type: "alpha" | "luminance";
   /** Boolean composition op against the masked content. */

@@ -24,6 +24,7 @@
 import type { CSSProperties, ReactElement } from "react";
 import type { RenderNode } from "./bundle";
 import { parseShapePaths, type SubPath } from "./svg-path";
+import { emitDiagnostic } from "./diagnostics";
 
 /** The geometry kind, read from `geometry` (compiler) or `kind` (legacy). */
 function geometryKind(props: Record<string, unknown>): string {
@@ -152,4 +153,119 @@ export function buildMaskCoverageFromShape(
   // coverage. We deliberately ignore the shape's own fills/strokes — a mask is
   // a coverage stencil, not a colour reproduction (A2.1 : inline the geometry).
   return buildShapeOutline(props, { fill: "white" }, nodeId, "mask-cover");
+}
+
+/** Default cap on the number of direct children composited into a group mask
+ *  (A4.4 budget T5). A container with more visible resolvable children is
+ *  TRUNCATED at this count with a diagnostic — never an unbounded build. The
+ *  real `817:2011` has 4 children ; the cap is generous yet bounded. */
+export const GROUP_MASK_MAX_CHILDREN = 64;
+
+/** Default cap on container-descent depth (A4.4 anti-cycle). `1` = a group's
+ *  direct children may themselves be one level of sub-container ; below that a
+ *  sub-container contributes nothing (diagnostic), so a `group → group → …`
+ *  chain can never recurse without bound. We NEVER read a node's own `mask`
+ *  during descent (a `mask → group → … → mask` cycle is structurally cut). */
+export const GROUP_MASK_MAX_DEPTH = 1;
+
+/** True iff a child node is excluded from the composite (`visible:false`).
+ *  `visible` lives in the node's static props (compiler-flattened), mirroring
+ *  the Tree's universal extraction (`resolved.visible`). */
+function isHidden(node: RenderNode): boolean {
+  return (node.props as { visible?: unknown } | undefined)?.visible === false;
+}
+
+function numProp(props: Record<string, unknown> | undefined, key: string): number {
+  const v = props?.[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * Composite the mask COVERAGE of a GROUP/FRAME container's VISIBLE children
+ * into a single typed `<g>` (#O, ADR 002 A4.3/A4.4).
+ *
+ * The coverage is the **union** of the white outlines of every visible direct
+ * child of geometry-resolvable kind — union being the native behaviour of
+ * stacking white coverages in one `<mask>` (SVG alpha cumulates). Each child's
+ * geometry is translated by its own `x`/`y` so the union lands in the
+ * container's coordinate space.
+ *
+ * Invariants (A4.4) :
+ *  - **visible-only** : `visible:false` children do not contribute.
+ *  - **anti-cycle, depth = 1** : a direct child that is itself a container is
+ *    descended at most `maxDepth` levels (default 1). We read ONLY geometry —
+ *    never any node's own `mask` — so a `mask → group → … → mask` chain is
+ *    structurally cut and no recursion through masks is possible.
+ *  - **budget T5** : at most `maxChildren` direct children are composited ;
+ *    beyond the cap the remainder is dropped with a static-reason diagnostic
+ *    (R9 — never the id value), never an unbounded composite / freeze.
+ *  - **omission, not crash** : a container with no visible resolvable child
+ *    returns `null` so the caller omits the mask (no throw).
+ *
+ * @param nodeId    for diagnostics only (never a value, R9).
+ * @param maxDepth  container-descent cap (default {@link GROUP_MASK_MAX_DEPTH}).
+ * @param maxChildren  per-container child cap (default {@link GROUP_MASK_MAX_CHILDREN}).
+ */
+export function buildMaskCoverageFromGroup(
+  node: RenderNode,
+  nodeId: string | undefined,
+  maxDepth: number = GROUP_MASK_MAX_DEPTH,
+  maxChildren: number = GROUP_MASK_MAX_CHILDREN,
+): ReactElement | null {
+  if (node.kind !== "frame") return null;
+  const parts = collectCoverage(node, nodeId, maxDepth, maxChildren, "grp");
+  if (parts.length === 0) return null;
+  return <g key="mask-group-cover">{parts}</g>;
+}
+
+/** Recursive (depth-bounded) collector : returns the white coverage elements
+ *  of `node`'s visible direct children, translating each by its own `x`/`y`.
+ *  A child container is descended only while `depth > 0`. NEVER reads a node's
+ *  `mask`. */
+function collectCoverage(
+  node: RenderNode,
+  nodeId: string | undefined,
+  depth: number,
+  maxChildren: number,
+  keyPrefix: string,
+): ReactElement[] {
+  const children = node.children ?? [];
+  const out: ReactElement[] = [];
+  let composited = 0;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i] as RenderNode;
+    if (isHidden(child)) continue;
+    if (composited >= maxChildren) {
+      emitDiagnostic(
+        nodeId,
+        "mask.source.ref",
+        `group mask exceeds the ${maxChildren}-child composite cap ; remainder truncated (ADR 002 A4.4 T5)`,
+      );
+      break;
+    }
+    let part: ReactElement | null = null;
+    if (child.kind === "shape") {
+      part = buildShapeOutline(child.props ?? {}, { fill: "white" }, child.id, `${keyPrefix}-${i}`);
+    } else if (child.kind === "frame" && depth > 0) {
+      // Bounded container descent (anti-cycle) — geometry only, never `mask`.
+      const sub = collectCoverage(child, nodeId, depth - 1, maxChildren, `${keyPrefix}-${i}`);
+      if (sub.length > 0) part = <g key={`${keyPrefix}-${i}`}>{sub}</g>;
+    }
+    // A non-geometry child (text/image/instance) or a too-deep sub-container
+    // contributes nothing — the mask is a coverage stencil over geometry only.
+    if (part === null) continue;
+    const x = numProp(child.props, "x");
+    const y = numProp(child.props, "y");
+    out.push(
+      x !== 0 || y !== 0 ? (
+        <g key={`${keyPrefix}-t-${i}`} transform={`translate(${x} ${y})`}>
+          {part}
+        </g>
+      ) : (
+        part
+      ),
+    );
+    composited++;
+  }
+  return out;
 }

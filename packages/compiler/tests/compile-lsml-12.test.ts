@@ -309,6 +309,28 @@ describe("mask — typed fields only, never a free SVG string (T3/T4)", () => {
     });
   });
 
+  it("forwards a group/frame container source (ADR 002 A4.3 #O)", () => {
+    const { warns, root } = compile({
+      kind: "frame",
+      mask: { source: { kind: "group", ref: "fig-817:2011" }, type: "alpha", op: "intersect" },
+    });
+    expect(root.props?.["mask"]).toMatchObject({
+      source: { kind: "group", ref: "fig-817:2011" },
+      type: "alpha",
+      op: "intersect",
+    });
+    expect(warns).toEqual([]);
+  });
+
+  it("drops a group source missing its ref", () => {
+    const { root, warns } = compile({
+      kind: "frame",
+      mask: { source: { kind: "group" } as never, type: "alpha", op: "intersect" },
+    });
+    expect(root.props?.["mask"]).toBeUndefined();
+    expect(warns.length).toBe(1);
+  });
+
   it("drops the whole mask on a bad type / op", () => {
     const t = compile({
       kind: "shape",

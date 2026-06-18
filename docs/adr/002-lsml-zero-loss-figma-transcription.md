@@ -339,6 +339,126 @@ le SVG assaini est le cas justifié, sous condition sanitizer) et T3 (zéro mark
 bundle — ici l'arbitraire est éliminé **à l'export** par rebuild typé). Aucune des 6 conditions
 existantes n'est relâchée ; #N en est une **précondition** au déverrouillage du MIME SVG.
 
+## Amendment 4 — Masques dont la source est un GROUP/FRAME (composite multi-enfants 0-perte) (2026-06-18)
+
+Status inchangé (`accepted`) : amendement, pas re-décision. Ferme le **dernier** écart du
+structural-diff de `817:3` (**2 résiduels, même cause racine**). Étend le canal #K (source forme)
+au cas — non couvert — où **le masque Figma est porté par un GROUP/FRAME**, pas une forme unique.
+
+### A4.1 — Diagnostic racine (vérifié sur le vrai `817:3`, code origin/main)
+
+Le masque résiduel est porté par un **GROUP** Figma `817:2011` (groupe de 4 ellipses dont une
+visible `817:2014`, masquant `817:2016` + la pavage vectorielle `817:2017`). La chaîne #K ne lower
+un shape-mask que si le nœud devient `kind:"shape"` :
+
+- **Mapper** (`mapping/traverse.ts:applyImageMaskGroups`) : la branche shape-mask est gardée par
+  `result.node.kind === "shape"`. Un GROUP/FRAME → `kind:"frame"` ⇒ on tombe dans le `else` (sibling
+  normal, `mask` jamais posé).
+- **Runtime** : `shape-index.tsx:buildShapeIndex` n'indexe **que** `kind:"shape"` ;
+  `buildMaskCoverageFromShape` retourne `null` si `node.kind !== "shape"` ; `resolveShape`
+  (`tree.tsx`) ne produit **qu'une seule** géométrie. Aucun chemin pour un container à N enfants.
+
+C'est l'**extension #K** : *source de masque = groupe/frame*, couverture = **composite des géométries
+des enfants visibles**. Les 2 résiduels du diff partagent cette unique cause.
+
+### A4.2 — Options examinées et verdict
+
+- **Option 1 — décomposer vers la seule ellipse visible (`817:2014`).** Marche pour CE cas mais
+  **viole le mandat 0-perte général** : un group-mask à plusieurs enfants visibles perdrait toute
+  couverture sauf la première. **Écartée** (pas 0-perte structurel ; corrige le symptôme, pas la
+  classe).
+- **Option 3 — choisir luminance vs alpha selon le cas.** Faux problème ici : `maskType` est déjà
+  mappé (`mapMaskType`, `alpha`|`luminance`) et préservé sur le `mask` ; le canal du composite est
+  **orthogonal** à la source group/frame. Aucune décision nouvelle à prendre — **non pertinente**.
+- **Option 2 — vrai support group/frame comme source de masque (composite).** Couverture du masque =
+  **union des alphas** de la géométrie des enfants **visibles** du container. **Retenue** :
+  0-perte général, et c'est l'extension *naturelle et minimale* de #K (même modèle d'id stable,
+  même résolution interne par index, même builder typé, même invariant anti-cycle). **Verdict : GO.**
+
+### A4.3 — Décision (extension de schéma + mapper + runtime + emit)
+
+1. **Schéma (protocol) — `MaskSource` étendu, additif.** Ajouter une 3ᵉ variante à l'union
+   `LSMLMask.source` : `{ kind: "group"; ref: string }`. `ref` = id stable du **nœud container**
+   (mêmes bornes `safeIdRef` que #K : `[A-Za-z0-9_:-]+`). Rétro-compat totale : `shape`/`image`
+   inchangés ; un bundle pré-A4 reste valide. **Pas de `kind:"frame"` distinct** : un FRAME masque et
+   un GROUP masque se résolvent identiquement (composite des enfants visibles) — une seule variante
+   `group` couvre les deux containers Figma (évite l'inflation d'enum, T4).
+2. **Mapper (`traverse.ts`).** Quand `isMaskNode` et `result.node.kind` ∈ `{frame}` (container — un
+   GROUP transparent et un FRAME lowrent tous deux en `frame`) : émettre l'`id` stable
+   `stableShapeId(src.id)` **sur le nœud container** (réutilise la fonction #K, zéro nouvelle
+   génération d'id), poser `activeMask = {source:{kind:"group", ref:id}, type:mapMaskType(...), op}`,
+   **garder le container dans l'arbre** (le runtime l'indexe pour descendre). Aucun id sur les
+   enfants (pas d'inflation : seul le container référencé porte un id). Le cas `kind:"shape"` (#K)
+   est inchangé ; ce bloc est un `else if` ajouté **avant** le fallback sibling.
+3. **Runtime — index.** `buildShapeIndex` (renommage conceptuel : *referenceable-node index*) indexe
+   désormais **aussi** les nœuds `kind:"frame"` portant un `id` (en plus des `shape`). L'invariant
+   d'unicité, l'ordre « première occurrence gagne » et le diagnostic de collision sont inchangés.
+4. **Runtime — composite.** Nouveau `buildMaskCoverageFromGroup(node, nodeId)` (sœur de
+   `buildMaskCoverageFromShape`) : itère `node.children`, et pour **chaque enfant visible**
+   (`visible !== false`) **de géométrie résolvable** (un `shape` → `buildShapeOutline` en coverage
+   blanche ; un sous-container → descente bornée, cf. anti-cycle) émet sa coverage ; **enveloppe
+   l'ensemble dans un `<g>`** typé. Union des alphas = empilement des coverages blanches dans le même
+   `<mask>` (l'alpha cumulé d'un `<mask>` est l'union — comportement SVG natif, aucun string libre).
+   `resolveShape` (`tree.tsx`) route sur `node.kind` : `shape`→coverage forme, `frame`→composite
+   groupe. **Builder 100 % typé, zéro `innerHTML`/`dangerouslySetInnerHTML` (T3).**
+5. **Compiler / `emit_lsml.go`.** `id` est déjà préservé verbatim (#K, round-trip T6) sur **tout**
+   `LSMLBaseNode` — donc déjà valable pour un `frame`. La 3ᵉ variante `source.kind:"group"` doit
+   entrer dans l'allowlist/validation du `mask.source` côté compiler (extension de l'enum fermé #K) et
+   passer `emit_lsml.go` round-trip (fixture : `mask.source.kind:"group"` bytes-stable).
+
+### A4.4 — Invariants (gravés comme acceptance #O)
+
+- **Composite = union des enfants visibles.** Un group-mask à N enfants visibles → la couverture est
+  l'**union** de leurs géométries (test : 2 enfants visibles disjoints → les deux zones masquent).
+- **`visible:false` exclu.** Un enfant du container masque avec `visible:false` **ne contribue pas**
+  à la couverture (test). Les 3 ellipses non visibles de `817:2011` n'élargissent pas la couverture.
+- **Anti-cycle, profondeur = 1 (condition Bastion, cf. A2.4).** La résolution `ref → container`
+  inline la **géométrie des enfants directs**, **jamais le `mask` propre** d'un enfant ni du
+  container. Un container imbriqué (group dans group masque) est borné par un **cap de descente T5**
+  (profondeur structurelle de composite plafonnée, défaut = 1 niveau de container ; au-delà →
+  diagnostic + on s'arrête, pas de crash). Un cycle `mask→group→…→mask` est structurellement coupé
+  (on n'inline jamais un `mask`).
+- **Ref pendante / container vide = omission, pas crash.** `ref` absent de l'index, ou container
+  sans enfant visible résolvable → masque **omis** + diagnostic à raison statique (R9, jamais l'`id`),
+  sous-arbre rendu non masqué. `buildMask` ne throw jamais (invariant #K étendu).
+- **Budget de complexité (T5).** Un container à très grand N (cap explicite, p. ex. `817:2017` ≈ 190
+  tuiles si jamais utilisé comme masque) → composite **borné** ; au-delà du cap → diagnostic +
+  troncature, jamais de freeze. À couvrir par fixture pathologique dans le harness sécu #I.
+
+### A4.5 — Issue #O et insertion dans l'ordre (§7)
+
+- **#O (group/frame-source masks — protocol + compiler + runtime + mapper, cross-stack)** — schéma :
+  3ᵉ variante `source.kind:"group"` + validation compiler ; mapper : id stable sur container + lowering
+  `mask` group-source + container gardé dans l'arbre ; runtime : index étendu aux `frame`,
+  `buildMaskCoverageFromGroup` (composite enfants visibles, anti-cycle + cap descente), routage
+  `resolveShape` ; emit : round-trip `source.kind:"group"`. **Acceptance** : A4.4 invariants +
+  structural-diff `817:3` = **0** (les 2 masques résiduels lowered) + T3 (aucun élément exécutable).
+  **Place** : **après #K** (le réutilise intégralement), **avant #J** (le harness 0-perte strict
+  `817:3` doit s'exécuter **avec** #O, sinon il mesurerait la perte des 2 masques group-source).
+  #I (gate d'authoring) borne #O : refuse un `mask.source.ref` group pendant et un container au-delà
+  du cap T5 **avant l'antenne** (extension de T4/T5, pas une condition nouvelle).
+
+### A4.6 — Note pour Bastion (clearance #O ciblée)
+
+**Aucune surface d'attaque nouvelle au-delà de #K.** La `ref` reste un **id interne sanitisé**
+(`safeIdRef`), pas une URL, pas de réseau, pas de fetch ; la résolution est un **lookup mémoire** dans
+l'arbre de rendu ; le composite réutilise le **builder typé React** (T3 : zéro `innerHTML`,
+élément-par-élément). Aucune primitive de schéma exécutable, aucun canal d'I/O nouveau. La 3ᵉ variante
+`source.kind:"group"` reste un **enum fermé** (T4).
+
+Deux risques **posés en condition** (à confirmer par fixture Bastion, intégrée au budget T5/#I) :
+
+1. **Group-mask cyclique** (`mask→group→…→mask`) : coupé par design (on n'inline jamais un `mask` ;
+   descente de composite bornée). À prouver : une fixture cyclique + une chaîne de containers profonde
+   ne provoquent **ni récursion ni freeze**.
+2. **Explosion de composite** (container à très grand N, ou imbrication profonde) : borné par le **cap
+   de descente + cap de N** (A4.4 budget T5). À prouver : un container pathologiquement large/profond
+   est **tronqué avec diagnostic**, jamais servi en composite non borné.
+
+**Clearance Bastion gated requise au merge du code #O** (T3 + anti-cycle/budget) — spawn confirmé par
+Eleven/utilisateur (coût). Si l'un de ces deux risques n'est pas tenu par les fixtures, le merge est
+bloqué (veto levable par fix ou acceptation de risque écrite ici).
+
 ## 1. Context
 
 ADR 001 a refermé la dette **runtime/compiler vs LSML 1.1** (paths, typo, `clipsContent`,
