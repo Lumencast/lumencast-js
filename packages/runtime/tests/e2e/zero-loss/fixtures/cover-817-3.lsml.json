@@ -1,0 +1,163 @@
+{
+  "$schema": "https://lumencast.dev/schema/lsml/1.2/schema.json",
+  "lsml": "1.2",
+  "scene_id": "cover-817",
+  "scene_version": "sha256:8e57a3899c1dcd70f0d8d3a1e921bc225165861a12954e751da49b796ee0b795",
+  "profiles": ["x-figma.authoring/1"],
+  "layout": {
+    "kind": "frame",
+    "children": [
+      {
+        "kind": "image",
+        "bind": {
+          "src": "__lit.image.817_84"
+        },
+        "alt": "Ruby20",
+        "size": {
+          "w": 400,
+          "h": 400
+        },
+        "fit": "cover",
+        "metadata": {
+          "figma": {
+            "layerName": "Ruby20",
+            "cornerRadius": 24
+          }
+        },
+        "blendMode": "hard-light"
+      },
+      {
+        "kind": "shape",
+        "geometry": "path",
+        "pathData": "M0 0 H300 V300 H0 Z",
+        "size": {
+          "w": 300,
+          "h": 300
+        },
+        "position": {
+          "x": 500,
+          "y": 0
+        },
+        "fills": [
+          {
+            "kind": "image",
+            "src": "data:image/png;base64,iVBORw0KGgoBAgME",
+            "objectFit": "cover"
+          }
+        ],
+        "ariaLabel": "3d render",
+        "metadata": {
+          "figma": {
+            "layerName": "3d render"
+          }
+        }
+      },
+      {
+        "kind": "shape",
+        "geometry": "rect",
+        "size": {
+          "w": 800,
+          "h": 200
+        },
+        "position": {
+          "x": 0,
+          "y": 500
+        },
+        "fills": [
+          {
+            "kind": "linear-gradient",
+            "stops": [
+              {
+                "offset": 0,
+                "color": "#ff3366"
+              },
+              {
+                "offset": 1,
+                "color": "#1a1a80"
+              }
+            ],
+            "transform": [0, -1, 1, 0, 0, 1]
+          }
+        ],
+        "metadata": {
+          "figma": {
+            "gradientTransforms": [
+              [
+                [0, 1, 0],
+                [-1, 0, 1]
+              ]
+            ],
+            "layerName": "WP Gradient panel"
+          }
+        },
+        "ariaLabel": "WP Gradient panel"
+      },
+      {
+        "kind": "frame",
+        "children": [
+          {
+            "kind": "image",
+            "bind": {
+              "src": "__lit.image.817_1994"
+            },
+            "alt": "Wavy shape",
+            "size": {
+              "w": 500,
+              "h": 500
+            },
+            "fit": "cover",
+            "position": {
+              "x": -1000,
+              "y": 0
+            },
+            "metadata": {
+              "figma": {
+                "layerName": "Wavy shape"
+              }
+            },
+            "blendMode": "hard-light",
+            "mask": {
+              "source": {
+                "kind": "image",
+                "src": "data:image/png;base64,iVBORw0KGgoBAgME"
+              },
+              "type": "alpha",
+              "op": "intersect"
+            }
+          }
+        ],
+        "size": {
+          "w": 500,
+          "h": 500
+        },
+        "position": {
+          "x": 1000,
+          "y": 0
+        },
+        "clipsContent": false,
+        "metadata": {
+          "figma": {
+            "layerName": "Mask group",
+            "sourceType": "GROUP"
+          }
+        }
+      }
+    ],
+    "size": {
+      "w": 1920,
+      "h": 1080
+    },
+    "metadata": {
+      "figma": {
+        "layerName": "Cover"
+      }
+    }
+  },
+  "defaults": {
+    "__lit.image.817_84": "assets/ruby20.png",
+    "__lit.image.817_1994": "assets/wavy.png"
+  },
+  "assets": {
+    "allowedHosts": []
+  }
+}

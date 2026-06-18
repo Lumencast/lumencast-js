@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Lumencast — zero-loss harness (817:3)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+      }
+      /* Fixed 1920×1080 stage so the screenshot matches the Figma reference
+         frame dimensions exactly (no viewport scaling). */
+      #scene {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="scene" data-testid="zero-loss-stage"></div>
+    <script type="module" src="./harness-entry.tsx"></script>
+  </body>
+</html>
