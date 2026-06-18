@@ -18,7 +18,7 @@ import { emitDiagnostic } from "./diagnostics";
 import { buildMask, parseMaskSpec } from "./mask";
 import { useAllowedHosts } from "./allowed-hosts";
 import { useShapeIndex } from "./shape-index";
-import { buildMaskCoverageFromShape } from "./shape-geometry";
+import { buildMaskCoverageFromShape, buildMaskCoverageFromGroup } from "./shape-geometry";
 
 export interface TreeProps {
   node: RenderNode;
@@ -168,13 +168,18 @@ function Node({ node, store }: TreeProps): ReactNode {
   // unmasked) with a diagnostic — never passthrough.
   if (resolved.mask !== undefined) {
     const spec = parseMaskSpec(resolved.mask, node.id);
-    // #K — resolve a shape ref to its inlined coverage geometry. The resolver
-    // reads ONLY the referenced shape's geometry (never its own mask), so a
-    // `mask → shape (carrying a mask) → …` chain is cut at depth 1 (anti-cycle).
-    // A pending ref → `buildMask` omits the mask (no crash).
+    // #K/#O — resolve a ref to its inlined coverage geometry, routed on the
+    // referenced node's `kind` : a `shape` → its own outline (#K) ; a `frame`
+    // (GROUP/FRAME container) → the composite of its visible children (#O). The
+    // resolver reads ONLY geometry (never any node's own mask), so a
+    // `mask → … → mask` chain is cut at depth 1 (anti-cycle). A pending ref →
+    // `buildMask` omits the mask (no crash).
     const resolveShape = (ref: string) => {
       const target = shapeIndex.get(ref);
-      return target ? buildMaskCoverageFromShape(target, target.id) : null;
+      if (!target) return null;
+      return target.kind === "frame"
+        ? buildMaskCoverageFromGroup(target, target.id)
+        : buildMaskCoverageFromShape(target, target.id);
     };
     const built = spec ? buildMask(spec, allowedHosts, node.id, resolveShape) : null;
     if (built) {

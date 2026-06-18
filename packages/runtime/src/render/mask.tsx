@@ -46,9 +46,13 @@ const MASK_TYPES = new Set(["alpha", "luminance"]);
 /** Closed `mask.op` allowlist — runtime half of the double-gate (T4). */
 const MASK_OPS = new Set(["intersect", "subtract", "union"]);
 
-/** A typed mask source, the only two shapes the builder accepts. Anything
- *  else (string, missing discriminant, extra markup) is rejected. */
-export type MaskSource = { kind: "shape"; ref: string } | { kind: "image"; src: string };
+/** A typed mask source, the only shapes the builder accepts. Anything else
+ *  (string, missing discriminant, extra markup) is rejected. A `group` source
+ *  (#O) references a GROUP/FRAME container by id, composited downstream. */
+export type MaskSource =
+  | { kind: "shape"; ref: string }
+  | { kind: "image"; src: string }
+  | { kind: "group"; ref: string };
 
 /** The typed mask spec as it reaches the runtime (compiler-lowered or a live
  *  LSDP delta). All fields are re-validated here — nothing is trusted. */
@@ -121,8 +125,14 @@ export function parseMaskSpec(value: unknown, nodeId: string | undefined): MaskS
     source = { kind: "shape", ref: s.ref };
   } else if (s.kind === "image" && typeof s.src === "string") {
     source = { kind: "image", src: s.src };
+  } else if (s.kind === "group" && typeof s.ref === "string") {
+    source = { kind: "group", ref: s.ref };
   } else {
-    emitDiagnostic(nodeId, "mask.source", "is not a typed shape|image source ; mask omitted (T3)");
+    emitDiagnostic(
+      nodeId,
+      "mask.source",
+      "is not a typed shape|image|group source ; mask omitted (T3)",
+    );
     return null;
   }
 
@@ -204,16 +214,17 @@ export function buildMask(
       />
     );
   } else {
-    // Shape source (#K) — INLINE the referenced shape's resolved coverage
-    // geometry into the `<mask>`, built element-by-element (T3 : zero markup).
-    // The former `<use href="#id">` relied on a defs-resolvable sibling that
-    // does not exist in the runtime's flat tree, so the mask covered nothing.
+    // Shape (#K) or group/frame (#O) source — INLINE the referenced node's
+    // resolved coverage geometry into the `<mask>`, built element-by-element
+    // (T3 : zero markup). For a `shape` the resolver returns its own outline ;
+    // for a `group` it returns the composite of the container's visible
+    // children (the resolver routes on the referenced node's kind).
     //
     // The ref is first re-sanitised (defence in depth : a live LSDP delta could
-    // smuggle markup chars), then resolved against the Tree's `id → shape`
+    // smuggle markup chars), then resolved against the Tree's referenceable-node
     // index. A PENDING ref (id absent) → the mask is omitted, sub-tree rendered
     // unmasked (A2.1 : omission, not crash). Anti-cycle is enforced by the
-    // resolver inlining ONLY geometry — never the resolved shape's own mask.
+    // resolver inlining ONLY geometry — never any node's own mask.
     const safeRef = safeIdRef(mask.source.ref);
     if (safeRef === null) {
       emitDiagnostic(

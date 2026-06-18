@@ -839,9 +839,12 @@ function lowerMask(
     typeof src === "object" &&
     src !== null &&
     ((src.kind === "shape" && typeof (src as { ref?: unknown }).ref === "string") ||
-      (src.kind === "image" && typeof (src as { src?: unknown }).src === "string"));
+      (src.kind === "image" && typeof (src as { src?: unknown }).src === "string") ||
+      // group/frame container source (ADR 002 A4.3) — same closed-enum, same
+      // `ref` shape as `shape` ; the runtime composites its visible children.
+      (src.kind === "group" && typeof (src as { ref?: unknown }).ref === "string"));
   if (!validSource) {
-    warn(opts, nodeId, "mask.source", "is not a typed shape|image source (ADR 002 §3.2)");
+    warn(opts, nodeId, "mask.source", "is not a typed shape|image|group source (ADR 002 §3.2)");
     return null;
   }
   // Re-emit only the typed fields, dropping any extraneous keys.
