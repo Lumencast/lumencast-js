@@ -4,8 +4,8 @@ import type { PrimitiveProps } from "./index";
 import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
 import { parseFills, renderFill, sanitizeFills, gateImageFills } from "../fill";
 import { parseCssColor, warnRejectedColor } from "../css-color";
-import { parseShapePaths, type SubPath } from "../svg-path";
 import { useAllowedHosts } from "../allowed-hosts";
+import { buildShapeOutline } from "../shape-geometry";
 
 interface StrokeSpec {
   color?: string;
@@ -38,7 +38,6 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
   const legacyStrokeWidth = numberOr(resolved.stroke_width, 0);
   const width = numberOr(resolved.width, 100);
   const height = numberOr(resolved.height, 100);
-  const radius = numberOr(resolved.radius, 0);
   const opacity = numberOr(resolved.opacity, 1);
   // LSML §4.6 `ariaLabel` was silently unrendered until issue #34's
   // allowlist audit surfaced it — now forwarded as the SVG label.
@@ -63,11 +62,6 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
     nodeId,
   );
   const strokes = parseStrokes(resolved.strokes);
-
-  // LSML 1.1 §4.6 — `geometry:"path"` : validated subpaths, one
-  // `<path>` element per entry (ADR 001 §3.2.3). Re-validated at every
-  // render — see module header of svg-path.ts (RC#10).
-  const subpaths = kind === "path" ? parseShapePaths(resolved, nodeId) : [];
 
   // Each fill compiles to a (defs, ref) pair. We render the shape
   // outline once per fill, layered top-to-bottom (first entry → on
@@ -99,71 +93,20 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
       ? stackedStrokes.filter((s) => s.width > 0 && s.color !== "transparent")
       : stackedStrokes;
 
+  // ADR 002 A2.1 (#K) — a single typed outline builder, shared with the mask
+  // inliner (`shape-geometry.tsx`), so a referenced shape's mask coverage is
+  // built from the IDENTICAL geometry as its on-screen render.
   const renderShape = (
     fill: string,
     stroke: { color: string; width: number },
     keyPrefix: string,
-  ): ReactElement => {
-    if (kind === "path") {
-      // §4.6 — fills and strokes apply to the union of all subpaths ;
-      // each subpath keeps its own winding rule (fill-rule).
-      return (
-        <g key={keyPrefix}>
-          {subpaths.map((p: SubPath, i: number) => (
-            <path
-              key={i}
-              d={p.d}
-              fillRule={p.fillRule}
-              fill={fill}
-              stroke={stroke.color}
-              strokeWidth={stroke.width}
-            />
-          ))}
-        </g>
-      );
-    }
-    if (kind === "circle") {
-      return (
-        <circle
-          key={keyPrefix}
-          cx={width / 2}
-          cy={height / 2}
-          r={Math.min(width, height) / 2 - stroke.width / 2}
-          fill={fill}
-          stroke={stroke.color}
-          strokeWidth={stroke.width}
-        />
-      );
-    }
-    if (kind === "line") {
-      return (
-        <line
-          key={keyPrefix}
-          x1="0"
-          y1={height / 2}
-          x2={width}
-          y2={height / 2}
-          stroke={stroke.color || fill}
-          strokeWidth={stroke.width || 1}
-        />
-      );
-    }
-    // rect default
-    return (
-      <rect
-        key={keyPrefix}
-        x={stroke.width / 2}
-        y={stroke.width / 2}
-        width={Math.max(0, width - stroke.width)}
-        height={Math.max(0, height - stroke.width)}
-        rx={radius}
-        ry={radius}
-        fill={fill}
-        stroke={stroke.color}
-        strokeWidth={stroke.width}
-      />
+  ): ReactElement =>
+    buildShapeOutline(
+      resolved,
+      { fill, stroke: stroke.color, strokeWidth: stroke.width },
+      nodeId,
+      keyPrefix,
     );
-  };
 
   return (
     <motion.svg

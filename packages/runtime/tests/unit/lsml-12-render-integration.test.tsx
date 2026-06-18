@@ -22,6 +22,7 @@ import type { ReactNode } from "react";
 
 import { Tree } from "../../src/render/tree.js";
 import { AllowedHostsProvider } from "../../src/render/allowed-hosts.js";
+import { ShapeIndexProvider, buildShapeIndex } from "../../src/render/shape-index.js";
 import { addDiagnosticsHandler, type RenderDiagnostic } from "../../src/render/diagnostics.js";
 import { createStore } from "../../src/state/store.js";
 import type { RenderNode } from "../../src/render/bundle.js";
@@ -57,7 +58,14 @@ afterEach(async () => {
 
 async function render(node: RenderNode, wrap?: (t: ReactNode) => ReactNode): Promise<void> {
   const store = createStore();
-  const tree = <Tree node={node} store={store} />;
+  // #K — the shape-source mask resolves its ref against the bundle-wide index ;
+  // build it from the rendered root so `ellipse-9` is resolvable.
+  const index = buildShapeIndex(node);
+  const tree = (
+    <ShapeIndexProvider index={index}>
+      <Tree node={node} store={store} />
+    </ShapeIndexProvider>
+  );
   await act(async () => {
     root.render(wrap ? wrap(tree) : tree);
   });
@@ -78,6 +86,10 @@ const TRIPLE = (src: string): RenderNode => ({
     mask: { source: { kind: "shape", ref: "ellipse-9" }, type: "alpha", op: "intersect" },
     backgrounds: [{ kind: "image", src, objectFit: "cover" }],
   },
+  // #K — the shape the mask references is a real indexed shape in the bundle.
+  children: [
+    { kind: "shape", id: "ellipse-9", props: { geometry: "circle", width: 80, height: 80 } },
+  ],
 });
 
 describe("LSML 1.2 render integration — blendMode + mask + image-fill coexist", () => {
