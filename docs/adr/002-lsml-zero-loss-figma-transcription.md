@@ -36,7 +36,7 @@ les conditions Bastion T1–T7 ne sont pas touchés. Au merge de **#H** (mapper)
 restent droppées en `metadata.figma.*` — elles brisent le « 0-perte sur n'importe quoi » du porteur
 et sont structurelles (pas un simple câblage de prop). Cet amendement les tranche et grave **#K**
 (shape-ref masks + id stables) et **#L** (per-fill blendMode), insérées dans l'ordre de build avant
-le harness **#J** (qui doit mesurer le 0-perte *avec* ces gaps fermés).
+le harness **#J** (qui doit mesurer le 0-perte _avec_ ces gaps fermés).
 
 ### A2.1 — Gap 1 : masques par forme-source (`mask.source.kind:"shape"`) + id stables
 
@@ -71,6 +71,7 @@ résoluble du même document SVG, donc le masque ne couvre rien. Décision :
    un `<defs>` global, le masque est auto-contenu.
 
 **Invariants (gravés comme acceptance #K).**
+
 - **Stabilité/unicité** : même frame Figma → même `id` à chaque run ; deux nœuds distincts → deux
   `id` distincts (test : transcription idempotente + collision-free sur `817:3`).
 - **Ref pendante = omission, pas crash** : un `mask.source.ref` sans entrée dans l'index → masque
@@ -82,7 +83,7 @@ résoluble du même document SVG, donc le masque ne couvre rien. Décision :
   récursion non bornée, pas de DoS. Profondeur de résolution **= 1** (une indirection), gravée comme
   invariant testable.
 
-### A2.2 — Gap 2 : blend au niveau *paint* (`blendMode` par entrée `LSMLFill`)
+### A2.2 — Gap 2 : blend au niveau _paint_ (`blendMode` par entrée `LSMLFill`)
 
 **État réel.** `blendMode` est aujourd'hui **par nœud** (`LSMLBaseNode.blendMode`, #D) → `mix-blend-mode`
 sur le wrapper du nœud. Un nœud Figma à **fills empilés** porte un `blendMode` **par fill** (chaque
@@ -177,7 +178,7 @@ Ces bytes ne sont résolus qu'à `finalize()`, via `getImageByHash(hash).getByte
 2. `mapping/frame.ts:102-110` — IMAGE paint d'un frame → background `{kind:"image",src}` →
    `registerImageHashAsDataUri`.
 3. `mapping/traverse.ts:246,277-287` (`maskImageSrc`) — IMAGE paint d'un nœud `isMask` → `mask.source
-   {kind:"image",src}` → `registerImageHashAsDataUri`.
+{kind:"image",src}` → `registerImageHashAsDataUri`.
 
 **Le point unique de matérialisation** (et le seul endroit où le SVG est aujourd'hui droppé) :
 `export/assets.ts:135-161` `finalize()` → bloc `dataUriByHash`. Le sniff (`sniffImageExtension`,
@@ -231,9 +232,9 @@ pas ici) :
 - **Principe : parse-then-rebuild typé, JAMAIS regex-strip.** On parse le SVG en arbre, on
   **reconstruit** un nouveau document à partir d'une **allowlist stricte d'éléments/attributs
   purement géométriques** (`svg, g, path, rect, circle, ellipse, line, polyline, polygon, defs,
-  linearGradient, radialGradient, stop, clipPath, mask` + attributs de pure géométrie/peinture :
+linearGradient, radialGradient, stop, clipPath, mask` + attributs de pure géométrie/peinture :
   `d, x, y, width, height, cx, cy, r, rx, ry, points, transform, fill, stroke, stroke-width,
-  fill-rule, opacity, viewBox, offset, stop-color, gradientUnits, gradientTransform`). Tout le reste
+fill-rule, opacity, viewBox, offset, stop-color, gradientUnits, gradientTransform`). Tout le reste
   est **non porté** (drop dur de l'élément/attribut, pas masqué) — l'allowlist exacte est le livrable
   Bastion.
 - **Suppression dure (structurellement impossible de survivre)** : `script`, `foreignObject`,
@@ -371,17 +372,17 @@ rendu** :
   tous **en flux normal**, empilés au coin haut-gauche du frame.
 
 Résultat : les deux textes du carré rating se superposent en haut-gauche au lieu de tomber à
-(13,8) et (18,19). C'est **structurellement** vrai pour *tout* frame non-auto-layout à enfants
+(13,8) et (18,19). C'est **structurellement** vrai pour _tout_ frame non-auto-layout à enfants
 absolus — toute la moitié « composition libre » de Figma. **Le fill coloré du frame, lui, est
 correctement rendu** (`frame.background`/`backgrounds` sont dans l'allowlist et consommés,
 `frame.tsx:39-72`) ; le bug « carré rating » est donc **uniquement** la perte du layout interne,
 pas du fond. Le diagnostic du porteur (« layout manquant dans le carré coloré ») est exact à la
 lettre.
 
-> Classement : **lacune de langage de positionnement au rendu**. LSML *a* le champ
+> Classement : **lacune de langage de positionnement au rendu**. LSML _a_ le champ
 > `position:{x,y}` au schéma (§5.4, `lsml-types.ts:152-153`) mais **aucun primitif conteneur
 > n'établit de coordonnées absolues pour ses enfants** et l'allowlist+wrapper le jettent. Le
-> langage *décrit* la position ; le runtime ne l'*honore* pas. C'est le défaut le plus grave et
+> langage _décrit_ la position ; le runtime ne l'_honore_ pas. C'est le défaut le plus grave et
 > le plus transverse de la chaîne.
 
 ### 1.2 Lacune de langage core : effets / masques / blend / image-fills (cause des écarts cover)
@@ -400,13 +401,14 @@ et de shape (`mapping/shape.ts:64-68` filtre les paints IMAGE → **droppés du 
   (`image` est un primitif séparé, pas un fill), gradient angular/diamond (droppé `color.ts`),
   gradient transform complet (réduit à `angle_deg`, `color.ts:94-106`).
 
-> Classement : **lacune de langage core**. Le mapper *peut* tout capturer ; le format core ne
-> *peut pas* l'exprimer de façon rendable → le runtime ne peut rien en faire. C'est l'objet du
+> Classement : **lacune de langage core**. Le mapper _peut_ tout capturer ; le format core ne
+> _peut pas_ l'exprimer de façon rendable → le runtime ne peut rien en faire. C'est l'objet du
 > RFC LSML 1.2 déjà ouvert par ADR 001 RC#9, ici **promu en décision d'implémentation**.
 
 > **Faits concrets `817:3` (`get_design_context` réel, 2026-06-17).** Ce qu'on appelait
 > « glass/noise/texture » n'est **pas** du procédural exotique — c'est exactement la matière
 > de 1.2 D2/D3, prouvée nœud par nœud :
+>
 > - **blend modes** : `mix-blend-hard-light` sur `817:84` (Ruby20, image fond) et `817:1994`
 >   (wavy shape) → `blendMode` core.
 > - **masque** : `817:1991` « Mask group » = masque **alpha par image/forme**, op booléenne
@@ -424,18 +426,18 @@ et de shape (`mapping/shape.ts:64-68` filtre les paints IMAGE → **droppés du 
 
 - **Image-fill de shape** : `mapping/shape.ts:65` filtre `p.type !== "IMAGE"` → l'image d'une
   forme (rounded-rect « Ruby20 »/« texture » de la cover) **n'est ni un Fill ni capturée comme
-  imageBackground** (contrairement au frame). Perte sèche de l'asset sur shape. *(transcription)*
+  imageBackground** (contrairement au frame). Perte sèche de l'asset sur shape. _(transcription)_
 - **Gradient transform** : `paintToFill` réduit la matrice 2×3 à `angle_deg`
   (`color.ts:124`), perdant translation/scale/shear ; la matrice brute est stashée en
   `metadata.figma.gradientTransforms` (`shape.ts:128-133`) mais **ignorée au runtime**. Rendu
-  approximatif. *(langage core — `LSMLFill` n'a pas de transform ; le RFC doit l'ajouter)*
+  approximatif. _(langage core — `LSMLFill` n'a pas de transform ; le RFC doit l'ajouter)_
 - **BOOLEAN_OPERATION non-UNION** : subtract/intersect/exclude perdent l'opération au rendu
   non-Figma (`traverse.ts:161-173, 302-325` — fidélité structurelle conservée, fidélité
-  visuelle perdue). *(langage core)*
+  visuelle perdue). _(langage core)_
 - **Pavage ~190 tiles** (cover) : représenté à plat, 190 nœuds. **Pas une perte** d'information
   (chaque tile round-trip), mais coût bundle ; `repeat` est une liste data, pas un pavage
-  géométrique figé → ne s'applique pas. Décision : accepter le pavage à plat (cf. §3.5). *(ni
-  l'un ni l'autre — non-problème, documenté pour fermer la question)*
+  géométrique figé → ne s'applique pas. Décision : accepter le pavage à plat (cf. §3.5). _(ni
+  l'un ni l'autre — non-problème, documenté pour fermer la question)_
 
 ## 2. Decision drivers
 
@@ -493,27 +495,27 @@ constructions sont **obligatoires en 1.2** (plus optionnelles) : chacune est req
 0-perte strict de `817:3`, prouvée nœud par nœud (§1.2). Nouvelles constructions de schéma
 (additives, 1.1→1.2) :
 
-- **`blendMode`** *(obligatoire)* sur tout primitif (→ `mix-blend-mode` CSS, enum fermé fidèle à
+- **`blendMode`** _(obligatoire)_ sur tout primitif (→ `mix-blend-mode` CSS, enum fermé fidèle à
   Figma moins `PASS_THROUGH`). Allowlist d'enum, jamais passthrough. **Preuve** :
   `mix-blend-hard-light` sur `817:84` (Ruby20) et `817:1994` (wavy shape) — 0 support 1.1.
-- **`mask`** *(obligatoire)* : masque par forme **ou image**. Modèle de schéma :
+- **`mask`** _(obligatoire)_ : masque par forme **ou image**. Modèle de schéma :
   `mask:{ source: <ref forme | image src>; type:"alpha"|"luminance"; op:"intersect"|"subtract"|"union";
-  position?; size? }`. Un nœud `isMask:true` (déjà capturé `figma-extras.ts:225`) devient, au rendu,
+position?; size? }`. Un nœud `isMask:true` (déjà capturé `figma-extras.ts:225`) devient, au rendu,
   un `<mask>`/`<clipPath>` SVG appliqué à ses siblings suivants dans le groupe (sémantique Figma).
   **Preuve** : `Mask group 817:1991` = masque **alpha**, op **intersect**, par image d'ellipse,
   avec position/size — 0 support 1.1 (`clipsContent` ne fait qu'un clip rect au `size`).
   **Remplace** `clipsContent` pour les cas non-rect.
-- **Image-fill sur shape ET frame** *(obligatoire)* comme **fill de première classe** :
+- **Image-fill sur shape ET frame** _(obligatoire)_ comme **fill de première classe** :
   `LSMLFill | { kind:"image"; src; objectFit:"cover"|"contain"|"fill"; opacity?; transform? }`.
   Unifie l'image-fill frame (aujourd'hui `metadata.figma.imageBackgrounds`) et débloque l'image-fill
   shape (aujourd'hui droppée `shape.ts:65`). Le primitif `image` reste pour l'image-en-tant-que-nœud.
   **Preuve** : `817:84`, `817:1174`, `817:1992/1994` = images **dans des formes** (`object-cover`).
-- **Gradient transform** *(obligatoire)* : `LSMLFill` gradient porte une matrice 2×3 (au-delà de
+- **Gradient transform** _(obligatoire)_ : `LSMLFill` gradient porte une matrice 2×3 (au-delà de
   `angle_deg`), rendue via `gradientTransform` SVG. Récupère la matrice déjà stashée. **Preuve** :
   `WP Gradient` réduit aujourd'hui à `angle_deg` (`color.ts:124`).
 - **`effects[]`** sur tout primitif : `drop-shadow`/`inner-shadow` (→ SVG `filter`/`feDropShadow`
   ou `box-shadow` CSS selon primitif), `blur` (→ `filter: blur()`). Valeurs (couleur, offset,
-  radius, spread) parser strict RC#11. *(Non requis par `817:3` mais dans le périmètre 1.2.)*
+  radius, spread) parser strict RC#11. _(Non requis par `817:3` mais dans le périmètre 1.2.)_
 - **Angular/diamond gradient** : `kind:"angular-gradient"|"diamond-gradient"` (déjà anticipés
   `fill.tsx:209-227` comme « land with LSML 1.2 »). Rendu SVG/`conic-gradient`.
 
@@ -619,17 +621,17 @@ en metadata :
 ## 5. Risks
 
 - **R1 — Perf rendu (D2).** `filter`/`mask`/`mix-blend-mode` imbriqués sur 190 tiles + grandes
-  ellipses de la cover peuvent dégrader le framerate CEF. *Mitigation* : props statiques hors hot
+  ellipses de la cover peuvent dégrader le framerate CEF. _Mitigation_ : props statiques hors hot
   path ; budget de complexité (nb d'effets/masques par bundle) mesuré en CI ; profilage sur
   `817:3` avant go-live. **À threat-modéliser avec Bastion** (DoS rendu).
 - **R2 — Surface d'injection (D2).** Image `src` en fill, `<mask>`/`<clipPath>` id refs, valeurs
-  d'effet en CSS → nouveaux sites. *Mitigation* : parser strict RC#11, allowlist d'hôtes, bornes
+  d'effet en CSS → nouveaux sites. _Mitigation_ : parser strict RC#11, allowlist d'hôtes, bornes
   RC#10/#12. **Clearance Bastion bloquante.**
 - **R3 — Dérive multi-SDK.** Un bump 1.2 mal coordonné casse le round-trip bytes `lumencast-go`.
-  *Mitigation* : RFC figé d'abord, validateurs alignés avant tout merge runtime ; fixtures golden
+  _Mitigation_ : RFC figé d'abord, validateurs alignés avant tout merge runtime ; fixtures golden
   cross-SDK.
 - **R4 — Modèle de placement D1.** Mal posé (`relative`/`absolute`), il casse l'auto-layout
-  existant des scènes en prod (boards live actuels). *Mitigation* : enfant sans `position` =
+  existant des scènes en prod (boards live actuels). _Mitigation_ : enfant sans `position` =
   flux normal strictement inchangé ; suite de non-régression sur les bundles live actuels
   (GIDEON…Namgung, canary R9) avant merge D1.
 - **R5 — Noise/texture/glass — RÉSOLU (2026-06-17), plus un risque ouvert.** Le pull
@@ -638,7 +640,7 @@ en metadata :
   Toutes ces familles sont des features core 1.2 **obligatoires** (§3.2). Le 0-perte strict est
   donc atteint **EN-LANGAGE**, sans raster ni acceptation de risque (les deux écartés, §3.5).
   Aucune mitigation résiduelle requise ; la conformance est vérifiée par RC#10 (diff pixel nul,
-  0 nœud rastérisé). *Risque résiduel reporté sur R1 (perf des effets/masques réels).*
+  0 nœud rastérisé). _Risque résiduel reporté sur R1 (perf des effets/masques réels)._
 
 ## 6. Resolution criteria
 
@@ -700,17 +702,18 @@ Testables ; CI `lumencast-js` sauf mention.
   `UniversalWrapper` + `position:relative` conditionnel sur `Frame`/`Stack`/`Grid`. RC#1, #2, #3.
 - **#B (D1, validation)** — Fixture Rating_Block `49:721` + non-régression bundles live + canary.
   RC#1, #2.
-> **Conditions Bastion gravées en critères d'acceptation (T1–T6, cf. §3.4).** Chaque condition
-> ci-dessous est un critère **« doit passer »** avec son test associé ; Bastion re-valide chaque
-> PR. Mapping : T1→#F/#E/#C · T2→#F/#E/#C · T3→#E/#I · T4→#D/#E/#F/#I · T5→#I/#J · T6→#I/#G/#H.
+
+  > **Conditions Bastion gravées en critères d'acceptation (T1–T6, cf. §3.4).** Chaque condition
+  > ci-dessous est un critère **« doit passer »** avec son test associé ; Bastion re-valide chaque
+  > PR. Mapping : T1→#F/#E/#C · T2→#F/#E/#C · T3→#E/#I · T4→#D/#E/#F/#I · T5→#I/#J · T6→#I/#G/#H.
 
 - **#C (RFC + schéma 1.2, FONDATION)** — Figer `[RFC] LSML 1.2` sur `lumencast-protocol` : schémas
   des features **obligatoires** (blend/mask/image-fill/gradient-transform) + effects/angular-diamond
-  + SDK + diff pixel nul `817:3`. **Module `host-allow.ts` + enums fermés** posés ici (fondation
-  partagée runtime/compiler). **Pas d'arbitrage noise/texture/glass** (tranché ADR §3.5). RC#14.
-  - **T1/T2 (schéma)** : `schema.json` borne `src`/`mask.source` au pattern `https:`(+`data:image/*`)
+  - SDK + diff pixel nul `817:3`. **Module `host-allow.ts` + enums fermés** posés ici (fondation
+    partagée runtime/compiler). **Pas d'arbitrage noise/texture/glass** (tranché ADR §3.5). RC#14.
+  * **T1/T2 (schéma)** : `schema.json` borne `src`/`mask.source` au pattern `https:`(+`data:image/*`)
     et déclare `assets.allowedHosts` ; un schéma `lsml:"1.2"` sans allowlist effective ne valide pas.
-  - **Acceptance** : module `host-allow.ts` (`isHostAllowed`, match strict `new URL().hostname`)
+  * **Acceptance** : module `host-allow.ts` (`isHostAllowed`, match strict `new URL().hostname`)
     exporté + testé (allow exact, reject sous-domaine non listé, reject substring-spoof) avant tout
     consommateur.
 - **#D (D2, schéma+runtime)** — `blendMode` core **(obligatoire, `817:84`/`817:1994`)** +
@@ -730,15 +733,15 @@ Testables ; CI `lumencast-js` sauf mention.
   - **T4 (doit passer)** : `mask.type`/`mask.op` hors enum → diagnostic + omission.
 - **#F (D2, schéma+runtime — host-allow ENFORCEMENT, PRIORITAIRE)** — Image-fill première classe
   (`{kind:"image"}` + `objectFit` dans `LSMLFill`) **(obligatoire, `817:84`/`817:1174`/`817:1992`)**
-  + gradient transform **(WP Gradient)** + angular/diamond. RC#7, #8.
-  - **T1 — enforcement runtime+compiler de l'allowlist d'hôtes (FONDATION, prioritaire).** Câbler
+  - gradient transform **(WP Gradient)** + angular/diamond. RC#7, #8.
+  * **T1 — enforcement runtime+compiler de l'allowlist d'hôtes (FONDATION, prioritaire).** Câbler
     `host-allow.ts` (#C) dans `image.tsx`/`fill.tsx` + `compile.ts` : tout `src` image-fill passe
     `isHostAllowed` AVANT le DOM ; rejet → diagnostic + omission. **Referme aussi le trou latent
     1.1** (allowlist déclarative jamais enforced, exploitable dès 1.1) — c'est pourquoi T1 part en
     premier dans le chantier. **Doit passer** : `src` hôte non listé → omis + diagnostic, jamais
     rendu ; delta LSDP live avec hôte pirate également bloqué (gate compiler ET runtime).
-  - **T2 (doit passer)** : `src: javascript:`/`data:text/html`/`file:` rejetés (aucun `<img>`/fetch).
-  - **T4 (doit passer)** : `objectFit` hors enum → omission ; `gradientTransform` = 6 floats finis
+  * **T2 (doit passer)** : `src: javascript:`/`data:text/html`/`file:` rejetés (aucun `<img>`/fetch).
+  * **T4 (doit passer)** : `objectFit` hors enum → omission ; `gradientTransform` = 6 floats finis
     bornés (rejet de NaN/Inf/string).
 - **#G (D2, compiler)** — `@lumencast/compiler` forwarde les nouvelles props 1.2 ; `emit_lsml.go`
   bump `"1.2"` + fixtures round-trip `lumencast-go`. RC#11.
