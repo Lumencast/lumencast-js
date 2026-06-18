@@ -358,7 +358,7 @@ un shape-mask que si le nœud devient `kind:"shape"` :
   `buildMaskCoverageFromShape` retourne `null` si `node.kind !== "shape"` ; `resolveShape`
   (`tree.tsx`) ne produit **qu'une seule** géométrie. Aucun chemin pour un container à N enfants.
 
-C'est l'**extension #K** : *source de masque = groupe/frame*, couverture = **composite des géométries
+C'est l'**extension #K** : _source de masque = groupe/frame_, couverture = **composite des géométries
 des enfants visibles**. Les 2 résiduels du diff partagent cette unique cause.
 
 ### A4.2 — Options examinées et verdict
@@ -372,7 +372,7 @@ des enfants visibles**. Les 2 résiduels du diff partagent cette unique cause.
   **orthogonal** à la source group/frame. Aucune décision nouvelle à prendre — **non pertinente**.
 - **Option 2 — vrai support group/frame comme source de masque (composite).** Couverture du masque =
   **union des alphas** de la géométrie des enfants **visibles** du container. **Retenue** :
-  0-perte général, et c'est l'extension *naturelle et minimale* de #K (même modèle d'id stable,
+  0-perte général, et c'est l'extension _naturelle et minimale_ de #K (même modèle d'id stable,
   même résolution interne par index, même builder typé, même invariant anti-cycle). **Verdict : GO.**
 
 ### A4.3 — Décision (extension de schéma + mapper + runtime + emit)
@@ -390,7 +390,7 @@ des enfants visibles**. Les 2 résiduels du diff partagent cette unique cause.
    **garder le container dans l'arbre** (le runtime l'indexe pour descendre). Aucun id sur les
    enfants (pas d'inflation : seul le container référencé porte un id). Le cas `kind:"shape"` (#K)
    est inchangé ; ce bloc est un `else if` ajouté **avant** le fallback sibling.
-3. **Runtime — index.** `buildShapeIndex` (renommage conceptuel : *referenceable-node index*) indexe
+3. **Runtime — index.** `buildShapeIndex` (renommage conceptuel : _referenceable-node index_) indexe
    désormais **aussi** les nœuds `kind:"frame"` portant un `id` (en plus des `shape`). L'invariant
    d'unicité, l'ordre « première occurrence gagne » et le diagnostic de collision sont inchangés.
 4. **Runtime — composite.** Nouveau `buildMaskCoverageFromGroup(node, nodeId)` (sœur de
