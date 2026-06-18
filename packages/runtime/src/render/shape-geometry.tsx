@@ -21,7 +21,7 @@
 //    NOTHING else : a `mask → shape (that itself carries a mask) → …` chain is
 //    structurally cut at depth 1, so no unbounded recursion / DoS is possible.
 
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 import type { RenderNode } from "./bundle";
 import { parseShapePaths, type SubPath } from "./svg-path";
 
@@ -39,11 +39,19 @@ function numberOr(v: unknown, fallback: number): number {
  * `fill` and `stroke`. Used by the `shape` primitive (per-fill layering) and,
  * with a fixed coverage paint, by the mask builder (#K).
  *
+ * Integration #L — `paint.mixBlendMode` carries a per-fill `mix-blend-mode`
+ * that has ALREADY been revalidated against the closed enum by `renderFill`
+ * (double-gate T4). It is applied as an inline `style` on the painted layer's
+ * SVG element. It is `undefined` for stroke passes and ALWAYS `undefined` for
+ * mask coverage (`buildMaskCoverageFromShape` never sets it) — a mask is a
+ * coverage stencil, never a colour/blend reproduction (#K hypothesis 2). No
+ * value other than an enum-validated keyword can reach this style key.
+ *
  * `nodeId` is for path-validation diagnostics only (never a value, R9).
  */
 export function buildShapeOutline(
   props: Record<string, unknown>,
-  paint: { fill: string; stroke?: string; strokeWidth?: number },
+  paint: { fill: string; stroke?: string; strokeWidth?: number; mixBlendMode?: string },
   nodeId: string | undefined,
   keyPrefix = "geom",
 ): ReactElement {
@@ -53,11 +61,17 @@ export function buildShapeOutline(
   const radius = numberOr(props.radius, 0);
   const stroke = paint.stroke ?? "none";
   const strokeWidth = paint.strokeWidth ?? 0;
+  // #L — only an enum-revalidated keyword reaches here ; absent → no style key
+  // (layer blends `normal`, rétro-compat). Mask coverage never passes one.
+  const style: CSSProperties | undefined =
+    paint.mixBlendMode !== undefined
+      ? ({ mixBlendMode: paint.mixBlendMode } as CSSProperties)
+      : undefined;
 
   if (kind === "path") {
     const subpaths = parseShapePaths(props, nodeId);
     return (
-      <g key={keyPrefix}>
+      <g key={keyPrefix} style={style}>
         {subpaths.map((p: SubPath, i: number) => (
           <path
             key={i}
@@ -75,6 +89,7 @@ export function buildShapeOutline(
     return (
       <circle
         key={keyPrefix}
+        style={style}
         cx={width / 2}
         cy={height / 2}
         r={Math.min(width, height) / 2 - strokeWidth / 2}
@@ -88,6 +103,7 @@ export function buildShapeOutline(
     return (
       <line
         key={keyPrefix}
+        style={style}
         x1="0"
         y1={height / 2}
         x2={width}
@@ -101,6 +117,7 @@ export function buildShapeOutline(
   return (
     <rect
       key={keyPrefix}
+      style={style}
       x={strokeWidth / 2}
       y={strokeWidth / 2}
       width={Math.max(0, width - strokeWidth)}

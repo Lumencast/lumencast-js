@@ -68,7 +68,13 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
   // top, per §4.12). The defs are aggregated for a single <defs>.
   const fillRenders = fills.map(renderFill);
   const allDefs = fillRenders.flatMap((r) => r.defs);
-  const fillRefs = fillRenders.length > 0 ? fillRenders.map((r) => r.ref) : [legacyFill];
+  // #L — each fill layer carries its (runtime-revalidated) `mix-blend-mode`,
+  // applied on that layer's SVG element, independent of the node-level blend
+  // (#D, on the wrapper). Legacy single-fill path carries no per-fill blend.
+  const fillLayers: { ref: string; mixBlendMode?: string }[] =
+    fillRenders.length > 0
+      ? fillRenders.map((r) => ({ ref: r.ref, mixBlendMode: r.mixBlendMode }))
+      : [{ ref: legacyFill }];
 
   // Strokes : same layered approach, but solid colours only (gradient
   // strokes are out of scope for §4.6 1.1). Each stroke is rendered
@@ -84,7 +90,7 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
   // Stack order : fillRefs are emitted top-to-bottom per §4.12. SVG
   // paints later siblings on top, so we reverse here so the first
   // entry in fills[] ends up rendered last (visually on top).
-  const stackedFills = [...fillRefs].reverse();
+  const stackedFills = [...fillLayers].reverse();
   const stackedStrokes = [...strokeLayers].reverse();
   // For paths, a zero-width / transparent stroke pass would only emit
   // invisible duplicate <path> elements — skip it.
@@ -93,17 +99,26 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
       ? stackedStrokes.filter((s) => s.width > 0 && s.color !== "transparent")
       : stackedStrokes;
 
-  // ADR 002 A2.1 (#K) — a single typed outline builder, shared with the mask
-  // inliner (`shape-geometry.tsx`), so a referenced shape's mask coverage is
-  // built from the IDENTICAL geometry as its on-screen render.
+  // Integration #K × #L — geometry construction is delegated to the single
+  // typed outline builder (`shape-geometry.tsx`, ADR 002 A2.1 #K), so a
+  // referenced shape's mask coverage is built from the IDENTICAL geometry as
+  // its on-screen render. The per-fill `mix-blend-mode` (#L, already runtime-
+  // revalidated by `renderFill` against the closed enum) is threaded through
+  // the paint argument and applied as inline `style` on the painted layer's
+  // SVG element. `undefined` (absent / out-of-enum) → no style key, layer
+  // blends `normal` (rétro-compat). Stroke passes never carry a fill blend —
+  // and the mask coverage path NEVER carries a blend (a mask is a coverage
+  // stencil, not a colour reproduction : `buildMaskCoverageFromShape` omits
+  // `mixBlendMode` entirely, #K hypothesis 2).
   const renderShape = (
     fill: string,
     stroke: { color: string; width: number },
     keyPrefix: string,
+    mixBlendMode?: string,
   ): ReactElement =>
     buildShapeOutline(
       resolved,
-      { fill, stroke: stroke.color, strokeWidth: stroke.width },
+      { fill, stroke: stroke.color, strokeWidth: stroke.width, mixBlendMode },
       nodeId,
       keyPrefix,
     );
@@ -120,8 +135,8 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
       style={{ willChange: "opacity, transform" }}
     >
       {allDefs.length > 0 && <defs>{allDefs}</defs>}
-      {stackedFills.map((ref, i) =>
-        renderShape(ref, { color: "transparent", width: 0 }, `fill-${i}`),
+      {stackedFills.map((layer, i) =>
+        renderShape(layer.ref, { color: "transparent", width: 0 }, `fill-${i}`, layer.mixBlendMode),
       )}
       {effectiveStrokes.map((s, i) => renderShape("none", s, `stroke-${i}`))}
     </motion.svg>

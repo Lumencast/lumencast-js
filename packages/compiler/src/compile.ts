@@ -739,6 +739,26 @@ function lowerFills(
   opts: CompileOptions,
 ): LSMLFill[] {
   return fills.flatMap((fill, i) => {
+    // #L (ADR 002 A2.2) — per-fill `blendMode`, revalidated against the closed
+    // enum (T4 compiler arm ; the runtime re-validates independently). A value
+    // outside `LSMLBlendMode` is diagnosed + omitted, never passthrough. The
+    // helper re-applies the validated mode (or drops it) on whatever the branch
+    // below emits, so the same gate covers every Fill variant.
+    const applyBlend = <T extends LSMLFill>(out: T): T => {
+      if (fill.blendMode === undefined) return out;
+      const mode = parseBlendMode(fill.blendMode);
+      if (mode === null) {
+        warn(
+          opts,
+          nodeId,
+          `${field}[${i}].blendMode`,
+          "is not a recognised mix-blend-mode (ADR 002 §3.2)",
+        );
+        const { blendMode: _drop, ...rest } = out;
+        return rest as T;
+      }
+      return { ...out, blendMode: mode };
+    };
     if (fill.kind === "image") {
       // T1/T2 — gate `src` before anything else ; a rejected host/scheme
       // drops the entire image-fill. R9 : the diagnostic carries the static
@@ -777,19 +797,19 @@ function lowerFills(
           out.transform = t;
         }
       }
-      return out;
+      return applyBlend(out);
     }
     if (fill.kind === "linear-gradient" || fill.kind === "radial-gradient") {
-      if (fill.transform === undefined) return fill;
+      if (fill.transform === undefined) return applyBlend(fill);
       const t = clampGradientTransform(fill.transform);
       if (t === null) {
         warn(opts, nodeId, `${field}[${i}].transform`, "is not 6 finite floats (ADR 002 §3.2)");
         const { transform: _drop, ...rest } = fill;
-        return rest;
+        return applyBlend(rest);
       }
-      return { ...fill, transform: t };
+      return applyBlend({ ...fill, transform: t });
     }
-    return fill;
+    return applyBlend(fill);
   });
 }
 
