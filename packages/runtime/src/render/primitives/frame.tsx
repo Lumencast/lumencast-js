@@ -2,9 +2,10 @@ import { motion } from "framer-motion";
 import type { CSSProperties } from "react";
 import type { PrimitiveProps } from "./index";
 import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
-import { backgroundsToCss, parseFills } from "../fill";
+import { backgroundsToCss, parseFills, gateImageFills } from "../fill";
 import { parseCssColor, warnRejectedColor } from "../css-color";
 import { emitDiagnostic } from "../diagnostics";
+import { useAllowedHosts } from "../allowed-hosts";
 
 /** Absolute-positioned container with size + transform + opacity.
  *  Animatable on `transform` and `opacity` only — width/height/position
@@ -41,7 +42,16 @@ export function Frame({
   if (rawBackground !== undefined && legacyBackground === null) {
     warnRejectedColor("frame.background", nodeId);
   }
-  const backgrounds = parseFills(resolved.backgrounds, "frame.backgrounds", nodeId);
+  // LSML 1.2 §3.2 — image-fill `src` is host/scheme-gated (Bastion T1/T2)
+  // BEFORE any URL reaches `background-image`. A rejected image-fill is
+  // dropped (no passthrough) with an R9-clean diagnostic.
+  const allowedHosts = useAllowedHosts();
+  const backgrounds = gateImageFills(
+    parseFills(resolved.backgrounds, "frame.backgrounds", nodeId),
+    allowedHosts,
+    "frame.backgrounds",
+    nodeId,
+  );
   const clipsContent = resolveClipsContent(resolved.clipsContent, nodeId);
 
   // Pick the most expressive declared transition among the animated

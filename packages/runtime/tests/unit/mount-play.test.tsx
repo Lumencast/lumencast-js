@@ -79,8 +79,16 @@ vi.mock("framer-motion", () => {
 });
 
 import { Tree } from "../../src/render/tree.js";
+import { AllowedHostsProvider } from "../../src/render/allowed-hosts.js";
 import { createStore } from "../../src/state/store.js";
 import type { RenderNode } from "../../src/render/bundle.js";
+
+// Host whose image src this suite uses. Image `src` is now host-gated
+// (ADR 002 #F, Bastion T1) so these animation-focused tests render inside a
+// provider that allows the test CDN — otherwise the image would be omitted
+// (deny-by-default), which is exactly the new security behaviour but not
+// what this suite is proving.
+const TEST_HOSTS = ["cdn.test"];
 
 async function renderNode(node: RenderNode, seed?: Record<string, unknown>): Promise<HTMLElement> {
   const store = createStore();
@@ -89,7 +97,11 @@ async function renderNode(node: RenderNode, seed?: Record<string, unknown>): Pro
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<Tree node={node} store={store} />);
+    root.render(
+      <AllowedHostsProvider hosts={TEST_HOSTS}>
+        <Tree node={node} store={store} />
+      </AllowedHostsProvider>,
+    );
   });
   return container;
 }
@@ -116,7 +128,7 @@ describe("LSML 1.1 §6 animate.from — mount-play", () => {
       animate_initial: { opacity: 0, scale: 0.85 },
       transitions: { opacity: { kind: "tween", duration_ms: 550, ease: "cubic-out" } },
     };
-    const container = await renderNode(node, { "logo.src": "logo.png" });
+    const container = await renderNode(node, { "logo.src": "https://cdn.test/logo.png" });
     const img = container.querySelector("img")!;
     const { initial, animate, transition } = readMotion(img);
 
@@ -155,7 +167,7 @@ describe("LSML 1.1 §6 animate.from — mount-play", () => {
       // legacy animate → transitions only, no from
       transitions: { opacity: { kind: "tween", duration_ms: 200, ease: "cubic-out" } },
     };
-    const container = await renderNode(node, { "logo.src": "logo.png" });
+    const container = await renderNode(node, { "logo.src": "https://cdn.test/logo.png" });
     const img = container.querySelector("img")!;
     const { initial, animate } = readMotion(img);
     // No mount-play: framer mounts directly at the target (no visible jump,
@@ -176,7 +188,7 @@ describe("LSML 1.1 §6 animate.from — mount-play", () => {
       animate_initial: { opacity: 0, scale: 0.85 },
       // no `transitions` at all
     };
-    const container = await renderNode(node, { "logo.src": "logo.png" });
+    const container = await renderNode(node, { "logo.src": "https://cdn.test/logo.png" });
     const img = container.querySelector("img")!;
     const { initial, animate, transition } = readMotion(img);
     expect(initial).toEqual({ opacity: 0, scale: 0.85 });
@@ -195,7 +207,7 @@ describe("LSML 1.1 §6 animate.from — mount-play", () => {
       // Image natively looks up only opacity/src.
       transitions: { scale: { kind: "tween", duration_ms: 1200, ease: "cubic-out" } },
     };
-    const container = await renderNode(node, { "logo.src": "logo.png" });
+    const container = await renderNode(node, { "logo.src": "https://cdn.test/logo.png" });
     const img = container.querySelector("img")!;
     const { transition } = readMotion(img);
     expect(transition).toMatchObject({ type: "tween", duration: 1.2 });
@@ -207,7 +219,7 @@ describe("LSML 1.1 §6 animate.from — mount-play", () => {
       props: { alt: "logo", width: 200, height: 200 },
       bindings: { src: "logo.src" },
     };
-    const container = await renderNode(node, { "logo.src": "logo.png" });
+    const container = await renderNode(node, { "logo.src": "https://cdn.test/logo.png" });
     const img = container.querySelector("img")!;
     const { transition } = readMotion(img);
     expect(transition).toMatchObject({ duration: 0 });

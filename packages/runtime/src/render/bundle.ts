@@ -111,7 +111,12 @@ export interface RenderBundle {
   root: RenderNode;
   operator_inputs?: OperatorInput[];
   external_adapters?: ExternalAdapter[];
-  assets?: Asset[];
+  /** Bundle-level asset declarations. `allowedHosts` is the host
+   *  allowlist (LSML 1.2 §3.2, Bastion T1) every image / image-fill `src`
+   *  is gated against at render BEFORE reaching the DOM. Absent / empty =
+   *  deny every remote host (deny-by-default). Other keys (`fonts`,
+   *  `preload`) are forwarded opaquely by the compiler. */
+  assets?: { allowedHosts?: string[]; [key: string]: unknown };
   /** LSML 1.1 §17.3 — capability profiles required for correct rendering.
    * Each entry is an `x-<vendor>.<name>/<version>` string. The runtime
    * checks every behavioural entry against its supported list ; an

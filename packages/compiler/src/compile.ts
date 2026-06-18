@@ -41,6 +41,7 @@ import {
   MASK_TYPES,
   MASK_OPS,
 } from "./lsml-1_2.js";
+import { checkHostAllowed } from "@lumencast/protocol";
 
 /** Structured compile diagnostic (ADR 001 §3.4, issue #34). Per
  *  Bastion R9 it carries node identity + field + static reason and
@@ -62,6 +63,13 @@ export interface CompileOptions {
   /** Optional warn collector — receives the formatted message plus the
    *  structured diagnostic (additive second argument, issue #34). */
   onWarn?: (message: string, diagnostic: CompileDiagnostic) => void;
+  /** INTERNAL (ADR 002 #F, Bastion T1/T2) — the bundle's
+   *  `assets.allowedHosts`, threaded down by `compileBundle` so image-fill
+   *  `src` is host/scheme-gated at lowering (the compiler arm of the
+   *  double-gate ; the runtime re-gates because live LSDP deltas bypass the
+   *  compiler). Not part of the caller-facing contract — `compileBundle`
+   *  always sets it from the bundle. */
+  allowedHosts?: readonly string[];
 }
 
 const SUPPORTED_VERSIONS = new Set(["1.0", "1.1", "1.2"] as const);
@@ -206,6 +214,10 @@ const BUNDLE_KEYS: ReadonlySet<string> = new Set([
   "layout",
   "operator_inputs",
   "external_adapters",
+  // ADR 002 #F — `assets` (incl. `allowedHosts`, Bastion T1/T6) is now
+  // consumed : it drives the image-fill host gate at lowering AND is
+  // forwarded verbatim into the RenderBundle so the runtime can re-gate.
+  "assets",
 ]);
 
 const NOT_LOWERED =
@@ -237,9 +249,17 @@ export function compileBundle(lsml: LSMLBundle, options: CompileOptions = {}): R
     );
   }
   auditBundleKeys(lsml, options);
+  // ADR 002 #F / Bastion T1+T2+T6 — thread `assets.allowedHosts` down so the
+  // compiler arm of the double-gate can host/scheme-check every image-fill
+  // `src` at lowering, and FORWARD `assets` verbatim into the bundle so the
+  // runtime arm has the allowlist to re-gate live LSDP deltas. `emit_lsml.go`
+  // (Orion) likewise preserves `assets.allowedHosts` (T6) — the compiler
+  // never fabricates or strips it.
+  const opts: CompileOptions = { ...options, allowedHosts: lsml.assets?.allowedHosts };
   return {
     scene_version: lsml.scene_version,
-    root: compileNode(lsml.layout, options),
+    root: compileNode(lsml.layout, opts),
+    ...(lsml.assets !== undefined ? { assets: lsml.assets } : {}),
     // LSML 1.1 §17.3 — forward `profiles[]` verbatim so the runtime applies
     // the same gating rule (§17.3.1 hard rejection for unsupported
     // behavioural profiles, §17.5.1 advisory pass-through for authoring
@@ -702,21 +722,37 @@ function lowerPaths(
 // Closed-enum + bounded-float gate at lowering. A bad enum value or a
 // malformed gradient transform is diagnosed and the offending FIELD is
 // omitted — the rest of the fill is preserved. Host/scheme allowlist of an
-// image-fill `src` (T1/T2) is enforced by #F at the call site that knows the
-// bundle's `assets.allowedHosts` ; this foundation supplies the typed shape
-// and the enum gate.
+// image-fill `src` (T1/T2) is enforced HERE (#F) against the threaded
+// `opts.allowedHosts` — the compiler arm of the double-gate. A rejected
+// `src` drops the WHOLE image-fill (never a passthrough URL) with an
+// R9-clean diagnostic. The runtime re-gates because live LSDP deltas bypass
+// the compiler entirely.
 
 /** Lower a `fills[]` / `backgrounds[]` array, validating 1.2 image-fill and
- *  gradient-transform fields. Unknown fill kinds and stop arrays pass
- *  through unchanged (they are gated elsewhere). */
+ *  gradient-transform fields. An image-fill whose `src` fails the host /
+ *  scheme allowlist is dropped (T1/T2). Unknown fill kinds and stop arrays
+ *  pass through unchanged (they are gated elsewhere). */
 function lowerFills(
   fills: LSMLFill[],
   nodeId: string | undefined,
   field: string,
   opts: CompileOptions,
 ): LSMLFill[] {
-  return fills.map((fill, i) => {
+  return fills.flatMap((fill, i) => {
     if (fill.kind === "image") {
+      // T1/T2 — gate `src` before anything else ; a rejected host/scheme
+      // drops the entire image-fill. R9 : the diagnostic carries the static
+      // reason, never the URL.
+      const decision = checkHostAllowed(fill.src, opts.allowedHosts);
+      if (!decision.allowed) {
+        warn(
+          opts,
+          nodeId,
+          `${field}[${i}].src`,
+          `image-fill src rejected by host/scheme allowlist : ${decision.reason} (ADR 002 §3.2, Bastion T1/T2)`,
+        );
+        return [];
+      }
       const out = { ...fill };
       if (fill.objectFit !== undefined) {
         const fit = parseObjectFit(fill.objectFit);

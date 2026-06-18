@@ -141,20 +141,25 @@ describe("exemptions (advisory by design)", () => {
 });
 
 describe("bundle-level accounting", () => {
-  it("defaults / assets / i18n are not lowered → one warning each, nodeId <bundle>", () => {
+  it("defaults / i18n are not lowered → one warning each, nodeId <bundle>", () => {
+    // ADR 002 #F — `assets` is now CONSUMED (host gate + forwarded), so it no
+    // longer warns NOT_LOWERED. `defaults` / `i18n` remain unlowered.
     const { diagnostics } = collect(
       bundle(
         { kind: "frame", id: "f" },
         {
           defaults: { "score.home": SENTINEL },
-          assets: { preload: [SENTINEL] },
           i18n: { default_locale: "fr" },
         },
       ),
     );
-    for (const field of ["defaults", "assets", "i18n"]) {
+    for (const field of ["defaults", "i18n"]) {
       expect(diagnostics).toContainEqual(expect.objectContaining({ nodeId: "<bundle>", field }));
     }
+    // `assets` must NOT warn anymore.
+    expect(diagnostics).not.toContainEqual(
+      expect.objectContaining({ nodeId: "<bundle>", field: "assets" }),
+    );
     expect(JSON.stringify(diagnostics)).not.toContain(SENTINEL);
   });
 });
