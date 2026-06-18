@@ -13,6 +13,7 @@ import type { CSSProperties, ReactElement } from "react";
 import { parseCssColor, warnRejectedColor } from "./css-color";
 import { emitDiagnostic } from "./diagnostics";
 import { gateSrc } from "./allowed-hosts";
+import { parseBlendMode } from "./blend-mode";
 
 export interface FillStop {
   offset: number;
@@ -37,13 +38,19 @@ export function parseObjectFitRuntime(value: unknown): ObjectFit | undefined {
   return typeof value === "string" && OBJECT_FITS.has(value) ? (value as ObjectFit) : undefined;
 }
 
+// LSML 1.2 §3.2 (#L) — optional per-fill-layer blend mode. Re-validated at
+// the RUNTIME against the closed enum (`parseBlendMode` from blend-mode.ts,
+// the runtime arm of the T4 double-gate ; the runtime never imports the
+// compiler). Out-of-enum → omitted, never reaches inline CSS. Independent of
+// the node-level blend (#D, applied on the wrapper). Absent = `normal`.
 export type Fill =
-  | { kind: "solid"; color: string; opacity?: number }
+  | { kind: "solid"; color: string; opacity?: number; blendMode?: string }
   | {
       kind: "linear-gradient";
       angle_deg?: number;
       stops: FillStop[];
       opacity?: number;
+      blendMode?: string;
     }
   | {
       kind: "radial-gradient";
@@ -51,6 +58,7 @@ export type Fill =
       radius?: number;
       stops: FillStop[];
       opacity?: number;
+      blendMode?: string;
     }
   | {
       // LSML 1.2 §3.2 — first-class image-fill. `src` is untrusted and is
@@ -61,6 +69,7 @@ export type Fill =
       src: string;
       objectFit?: ObjectFit;
       opacity?: number;
+      blendMode?: string;
     };
 
 let gradientIdSeq = 0;
@@ -74,16 +83,24 @@ export interface FillRenderResult {
   defs: ReactElement[];
   /** Reference to use as the `fill` attribute on the shape. */
   ref: string;
+  /** #L — the per-fill-layer `mix-blend-mode` keyword, re-validated against
+   *  the closed enum at the runtime (T4) ; `undefined` when absent or
+   *  out-of-enum (caller omits — never reaches the style). Applied on the
+   *  fill layer element, independent of the node-level blend (#D). */
+  mixBlendMode?: string;
 }
 
 /** Compile a Fill into an SVG `<defs>` entry + a `fill="url(#…)"` ref.
  * Solid fills produce no defs and return the colour directly. */
 export function renderFill(fill: Fill): FillRenderResult {
+  // #L — re-validate the per-fill blend mode once (runtime T4 arm). An absent
+  // or out-of-enum value yields `undefined` → the layer renders `normal`.
+  const mixBlendMode = parseBlendMode(fill.blendMode);
   if (fill.kind === "solid") {
     // Solid fill — no defs needed, just hand the colour to fill.
     // SVG fill-opacity composes with element opacity multiplicatively
     // so we apply both consistently.
-    return { defs: [], ref: fill.color };
+    return { defs: [], ref: fill.color, mixBlendMode };
   }
   if (fill.kind === "image") {
     // LSML 1.2 §3.2 — image-fill on a shape. Rendered as an SVG <pattern>
@@ -99,7 +116,7 @@ export function renderFill(fill: Fill): FillRenderResult {
         <image href={fill.src} width="1" height="1" preserveAspectRatio={par} />
       </pattern>,
     ];
-    return { defs, ref: `url(#${imgId})` };
+    return { defs, ref: `url(#${imgId})`, mixBlendMode };
   }
   const id = nextGradientId();
   if (fill.kind === "linear-gradient") {
@@ -130,7 +147,7 @@ export function renderFill(fill: Fill): FillRenderResult {
         ))}
       </linearGradient>,
     ];
-    return { defs, ref: `url(#${id})` };
+    return { defs, ref: `url(#${id})`, mixBlendMode };
   }
   // radial-gradient
   const cx = fill.center?.x ?? 0.5;
@@ -148,7 +165,7 @@ export function renderFill(fill: Fill): FillRenderResult {
       ))}
     </radialGradient>,
   ];
-  return { defs, ref: `url(#${id})` };
+  return { defs, ref: `url(#${id})`, mixBlendMode };
 }
 
 /** Map a closed-enum `objectFit` to the CSS `background-size` keyword that
@@ -200,9 +217,29 @@ function objectFitToPreserveAspectRatio(fit: ObjectFit | undefined): string {
 export function backgroundsToCss(fills: Fill[], nodeId?: string): CSSProperties {
   // Per §4.12, fills[0] renders on top — CSS background-image stacks
   // first → top-most. Match by passing in the same order.
-  const layers = fills.map((f) => fillToCss(f, nodeId)).filter(Boolean) as string[];
+  // #L — keep each layer's validated blend keyword aligned with its CSS
+  // layer (a rejected colour drops the layer → drop its blend too), so
+  // `background-blend-mode` stays positionally correct.
+  const kept: Fill[] = [];
+  const layers: string[] = [];
+  for (const f of fills) {
+    const css = fillToCss(f, nodeId);
+    if (css) {
+      layers.push(css);
+      kept.push(f);
+    }
+  }
   if (layers.length === 0) return {};
   const css: CSSProperties = { backgroundImage: layers.join(", ") };
+  // #L — per-fill-layer blend on a frame background uses CSS
+  // `background-blend-mode` (one keyword per layer, same order). Each value is
+  // re-validated against the closed enum (runtime T4 arm) ; an absent/rejected
+  // value falls back to `normal`. Emitted only when at least one layer carries
+  // a non-`normal` blend, to keep pre-#L output byte-identical (rétro-compat).
+  const blends = kept.map((f) => parseBlendMode(f.blendMode) ?? "normal");
+  if (blends.some((b) => b !== "normal")) {
+    css.backgroundBlendMode = blends.join(", ");
+  }
   // When any layer is an image-fill, drive its sizing from the (already
   // validated) objectFit. A single image-fill is the common cover case ;
   // for the first image-fill we set the background sizing for the whole box.
@@ -348,7 +385,20 @@ export function parseFills(value: unknown, field?: string, nodeId?: string): Fil
   // through to inline CSS. `src` is NOT gated here (it needs the host
   // allowlist) — `gateImageFills` does that downstream, before render.
   return value.filter(isFill).map((v) => {
-    const fill = v as Fill;
+    let fill = v as Fill;
+    // #L — re-validate a per-fill `blendMode` against the closed enum (runtime
+    // T4 arm). An out-of-enum value is diagnosed + stripped (the layer falls
+    // back to `normal`), never passed through to inline CSS. Applies to every
+    // fill kind.
+    if (fill.blendMode !== undefined && parseBlendMode(fill.blendMode) === undefined) {
+      emitDiagnostic(
+        nodeId,
+        field !== undefined ? `${field}.blendMode` : "fill.blendMode",
+        "is not a recognised mix-blend-mode ; falling back to normal (ADR 002 §3.2)",
+      );
+      const { blendMode: _drop, ...rest } = fill;
+      fill = rest;
+    }
     if (fill.kind !== "image") return fill;
     if (fill.objectFit === undefined) return fill;
     const fit = parseObjectFitRuntime(fill.objectFit);

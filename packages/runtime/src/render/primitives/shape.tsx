@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 import type { PrimitiveProps } from "./index";
 import { toFramer, mountPlay, resolveTransition } from "../../animate/transitions";
 import { parseFills, renderFill, sanitizeFills, gateImageFills } from "../fill";
@@ -74,7 +74,13 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
   // top, per §4.12). The defs are aggregated for a single <defs>.
   const fillRenders = fills.map(renderFill);
   const allDefs = fillRenders.flatMap((r) => r.defs);
-  const fillRefs = fillRenders.length > 0 ? fillRenders.map((r) => r.ref) : [legacyFill];
+  // #L — each fill layer carries its (runtime-revalidated) `mix-blend-mode`,
+  // applied on that layer's SVG element, independent of the node-level blend
+  // (#D, on the wrapper). Legacy single-fill path carries no per-fill blend.
+  const fillLayers: { ref: string; mixBlendMode?: string }[] =
+    fillRenders.length > 0
+      ? fillRenders.map((r) => ({ ref: r.ref, mixBlendMode: r.mixBlendMode }))
+      : [{ ref: legacyFill }];
 
   // Strokes : same layered approach, but solid colours only (gradient
   // strokes are out of scope for §4.6 1.1). Each stroke is rendered
@@ -90,7 +96,7 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
   // Stack order : fillRefs are emitted top-to-bottom per §4.12. SVG
   // paints later siblings on top, so we reverse here so the first
   // entry in fills[] ends up rendered last (visually on top).
-  const stackedFills = [...fillRefs].reverse();
+  const stackedFills = [...fillLayers].reverse();
   const stackedStrokes = [...strokeLayers].reverse();
   // For paths, a zero-width / transparent stroke pass would only emit
   // invisible duplicate <path> elements — skip it.
@@ -99,16 +105,22 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
       ? stackedStrokes.filter((s) => s.width > 0 && s.color !== "transparent")
       : stackedStrokes;
 
+  // #L — a fill layer's per-fill `mix-blend-mode` (already revalidated by
+  // `renderFill`) is applied as inline `style` on that layer's SVG element.
+  // `undefined` (absent / out-of-enum) → no style key, layer blends `normal`
+  // (rétro-compat). Stroke passes never carry a fill blend.
   const renderShape = (
     fill: string,
     stroke: { color: string; width: number },
     keyPrefix: string,
+    mixBlendMode?: string,
   ): ReactElement => {
+    const style = mixBlendMode !== undefined ? ({ mixBlendMode } as CSSProperties) : undefined;
     if (kind === "path") {
       // §4.6 — fills and strokes apply to the union of all subpaths ;
       // each subpath keeps its own winding rule (fill-rule).
       return (
-        <g key={keyPrefix}>
+        <g key={keyPrefix} style={style}>
           {subpaths.map((p: SubPath, i: number) => (
             <path
               key={i}
@@ -126,6 +138,7 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
       return (
         <circle
           key={keyPrefix}
+          style={style}
           cx={width / 2}
           cy={height / 2}
           r={Math.min(width, height) / 2 - stroke.width / 2}
@@ -139,6 +152,7 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
       return (
         <line
           key={keyPrefix}
+          style={style}
           x1="0"
           y1={height / 2}
           x2={width}
@@ -152,6 +166,7 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
     return (
       <rect
         key={keyPrefix}
+        style={style}
         x={stroke.width / 2}
         y={stroke.width / 2}
         width={Math.max(0, width - stroke.width)}
@@ -177,8 +192,8 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
       style={{ willChange: "opacity, transform" }}
     >
       {allDefs.length > 0 && <defs>{allDefs}</defs>}
-      {stackedFills.map((ref, i) =>
-        renderShape(ref, { color: "transparent", width: 0 }, `fill-${i}`),
+      {stackedFills.map((layer, i) =>
+        renderShape(layer.ref, { color: "transparent", width: 0 }, `fill-${i}`, layer.mixBlendMode),
       )}
       {effectiveStrokes.map((s, i) => renderShape("none", s, `stroke-${i}`))}
     </motion.svg>

@@ -95,9 +95,16 @@ export interface LSMLFillStop {
 }
 
 /** 1.1+ — Fill union used by `shape.fills[]` and `frame.backgrounds[]`
- *  (LSML §4.12). Discriminated on `kind`. */
+ *  (LSML §4.12). Discriminated on `kind`.
+ *
+ *  1.2+ (#L) — each variant may carry an optional `blendMode` (the closed
+ *  `LSMLBlendMode` enum, no new value introduced) applied as a per-fill-layer
+ *  `mix-blend-mode`, independent of the node-level blend (`LSMLBaseNode.
+ *  blendMode`, #D). Absent = `normal` (rétro-compat : a pre-#L bundle is
+ *  unchanged). Re-validated against the closed enum by both the compiler and
+ *  the runtime (T4 double-gate) ; out-of-enum → omission, never passthrough. */
 export type LSMLFill =
-  | { kind: "solid"; color: string; opacity?: number }
+  | { kind: "solid"; color: string; opacity?: number; blendMode?: LSMLBlendMode }
   | {
       kind: "linear-gradient";
       angle_deg?: number;
@@ -106,6 +113,7 @@ export type LSMLFill =
       transform?: LSMLGradientTransform;
       stops: LSMLFillStop[];
       opacity?: number;
+      blendMode?: LSMLBlendMode;
     }
   | {
       kind: "radial-gradient";
@@ -115,6 +123,7 @@ export type LSMLFill =
       transform?: LSMLGradientTransform;
       stops: LSMLFillStop[];
       opacity?: number;
+      blendMode?: LSMLBlendMode;
     }
   | {
       /** 1.2+ — first-class image-fill (ADR 002 §3.2). Unifies the frame
@@ -125,6 +134,7 @@ export type LSMLFill =
       objectFit?: LSMLObjectFit;
       opacity?: number;
       transform?: LSMLGradientTransform;
+      blendMode?: LSMLBlendMode;
     };
 
 /** 1.1+ — one stacked stroke layer (LSML §4.6). */

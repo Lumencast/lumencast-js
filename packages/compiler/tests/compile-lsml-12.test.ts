@@ -106,6 +106,86 @@ describe("blendMode — closed enum, omit on miss (T4)", () => {
   });
 });
 
+describe("per-fill blendMode (#L / A2.2) — closed enum, omit on miss (T4)", () => {
+  it("lowers a valid per-fill blendMode on each Fill variant", () => {
+    const { warns, root } = compile({
+      kind: "shape",
+      geometry: "rect",
+      fills: [
+        { kind: "solid", color: "#fff", blendMode: "multiply" },
+        { kind: "linear-gradient", stops: [{ offset: 0, color: "#000" }], blendMode: "screen" },
+        {
+          kind: "radial-gradient",
+          stops: [{ offset: 0, color: "#000" }],
+          blendMode: "overlay",
+        },
+        { kind: "image", src: "https://cdn.x/a.png", blendMode: "darken" },
+      ],
+    });
+    const fills = root.props?.["fills"] as Array<Record<string, unknown>>;
+    expect(fills[0]["blendMode"]).toBe("multiply");
+    expect(fills[1]["blendMode"]).toBe("screen");
+    expect(fills[2]["blendMode"]).toBe("overlay");
+    expect(fills[3]["blendMode"]).toBe("darken");
+    expect(warns).toEqual([]);
+  });
+
+  it("rétro-compat : a fill with no blendMode keeps no blendMode prop", () => {
+    const { warns, root } = compile({
+      kind: "shape",
+      geometry: "rect",
+      fills: [{ kind: "solid", color: "#fff" }],
+    });
+    const fills = root.props?.["fills"] as Array<Record<string, unknown>>;
+    expect("blendMode" in fills[0]).toBe(false);
+    expect(warns).toEqual([]);
+  });
+
+  it("omits + diagnoses an out-of-enum per-fill value, never passthrough", () => {
+    const { warns, root } = compile({
+      kind: "shape",
+      geometry: "rect",
+      id: "n1",
+      fills: [{ kind: "solid", color: "#fff", blendMode: "url(#x);color:red" as never }],
+    });
+    const fills = root.props?.["fills"] as Array<Record<string, unknown>>;
+    expect(fills[0]["blendMode"]).toBeUndefined();
+    // the rest of the fill survives — only the bad enum is dropped
+    expect(fills[0]["color"]).toBe("#fff");
+    expect(warns.length).toBe(1);
+    expect(warns[0]).toContain("blendMode");
+    expect(warns[0]).not.toContain("url(");
+    expect(warns[0]).not.toContain("color:red");
+  });
+
+  it("per-fill blend on a frame background is gated the same way", () => {
+    const { warns, root } = compile({
+      kind: "frame",
+      backgrounds: [
+        { kind: "solid", color: "#fff", blendMode: "luminosity" },
+        { kind: "solid", color: "#000", blendMode: "bogus" as never },
+      ],
+    });
+    const bg = root.props?.["backgrounds"] as Array<Record<string, unknown>>;
+    expect(bg[0]["blendMode"]).toBe("luminosity");
+    expect(bg[1]["blendMode"]).toBeUndefined();
+    expect(warns.length).toBe(1);
+  });
+
+  it("non-régression : node-level blend (#D) and per-fill blend coexist", () => {
+    const { warns, root } = compile({
+      kind: "shape",
+      geometry: "rect",
+      blendMode: "hard-light",
+      fills: [{ kind: "solid", color: "#fff", blendMode: "multiply" }],
+    });
+    expect(root.props?.["blendMode"]).toBe("hard-light");
+    const fills = root.props?.["fills"] as Array<Record<string, unknown>>;
+    expect(fills[0]["blendMode"]).toBe("multiply");
+    expect(warns).toEqual([]);
+  });
+});
+
 describe("image-fill — first-class fill + objectFit enum (T4)", () => {
   it("forwards an image fill with a valid objectFit", () => {
     const { warns, root } = compile({
