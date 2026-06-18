@@ -31,6 +31,13 @@ import type { ReactElement } from "react";
 import { checkHostAllowed } from "@lumencast/protocol";
 import { emitDiagnostic } from "./diagnostics";
 
+/** Resolve a shape `mask.source.ref` to its inlined mask-coverage geometry
+ *  (#K). The Tree supplies this from its one-pass `id → shape` index ; it
+ *  returns `null` for a PENDING ref (id absent from the index) so the mask is
+ *  omitted, never crashing. The resolver inlines ONLY the referenced shape's
+ *  geometry — never its own mask (anti-cycle, profondeur = 1). */
+export type ShapeRefResolver = (ref: string) => ReactElement | null;
+
 /** Closed `mask.type` allowlist — runtime half of the double-gate (T4).
  *  Mirrors `@lumencast/compiler` `MASK_TYPES` ; kept local so the runtime
  *  has no compile-time dependency on the compiler package. */
@@ -140,11 +147,15 @@ export function parseMaskSpec(value: unknown, nodeId: string | undefined): MaskS
  * @param allowedHosts  the bundle's `assets.allowedHosts` ; an image source is
  *                      gated against it (T1/T2) before reaching `<image href>`.
  * @param nodeId        for diagnostics (never carries a value, R9).
+ * @param resolveShape  resolves a shape `mask.source.ref` to its inlined
+ *                      coverage geometry (#K). Omitted / returns `null` ⇒ the
+ *                      shape source is pending → the whole mask is omitted.
  */
 export function buildMask(
   mask: MaskSpec,
   allowedHosts: readonly string[] | undefined,
   nodeId: string | undefined,
+  resolveShape?: ShapeRefResolver,
 ): BuiltMask | null {
   // T4 — defence in depth : re-validate the enums even though parseMaskSpec
   // already did, so `buildMask` is safe to call on any typed input.
@@ -193,9 +204,16 @@ export function buildMask(
       />
     );
   } else {
-    // Shape source — reference a sibling shape by its (sanitised) id via
-    // `<use href="#id">`. An unsafe ref (markup chars) is rejected : there
-    // is no legitimate id that needs them, so it can only be an injection.
+    // Shape source (#K) — INLINE the referenced shape's resolved coverage
+    // geometry into the `<mask>`, built element-by-element (T3 : zero markup).
+    // The former `<use href="#id">` relied on a defs-resolvable sibling that
+    // does not exist in the runtime's flat tree, so the mask covered nothing.
+    //
+    // The ref is first re-sanitised (defence in depth : a live LSDP delta could
+    // smuggle markup chars), then resolved against the Tree's `id → shape`
+    // index. A PENDING ref (id absent) → the mask is omitted, sub-tree rendered
+    // unmasked (A2.1 : omission, not crash). Anti-cycle is enforced by the
+    // resolver inlining ONLY geometry — never the resolved shape's own mask.
     const safeRef = safeIdRef(mask.source.ref);
     if (safeRef === null) {
       emitDiagnostic(
@@ -205,7 +223,31 @@ export function buildMask(
       );
       return null;
     }
-    content = <use href={`#${safeRef}`} {...geom} />;
+    const resolved = resolveShape?.(safeRef) ?? null;
+    if (resolved === null) {
+      emitDiagnostic(
+        nodeId,
+        "mask.source.ref",
+        "shape ref does not resolve to an indexed shape ; mask omitted (ADR 002 A2.1 #K)",
+      );
+      return null;
+    }
+    // Position/size place the inlined geometry numerically when given,
+    // wrapping it in a translated group (typed numbers only, never a string).
+    content =
+      Object.keys(geom).length > 0 ? (
+        <g
+          transform={
+            finite(geom.x) || finite(geom.y)
+              ? `translate(${finite(geom.x) ? geom.x : 0} ${finite(geom.y) ? geom.y : 0})`
+              : undefined
+          }
+        >
+          {resolved}
+        </g>
+      ) : (
+        resolved
+      );
   }
 
   // `union` widens coverage : a base full-coverage white rect is unioned with

@@ -17,6 +17,8 @@ import { checkNodeProps } from "./prop-allowlist";
 import { emitDiagnostic } from "./diagnostics";
 import { buildMask, parseMaskSpec } from "./mask";
 import { useAllowedHosts } from "./allowed-hosts";
+import { useShapeIndex } from "./shape-index";
+import { buildMaskCoverageFromShape } from "./shape-geometry";
 
 export interface TreeProps {
   node: RenderNode;
@@ -39,6 +41,9 @@ function Node({ node, store }: TreeProps): ReactNode {
   // ADR 002 §3.2 (#E) — the bundle's host allowlist, for gating an image
   // mask source (T1/T2). `undefined` = deny every remote host.
   const allowedHosts = useAllowedHosts();
+  // ADR 002 A2.1 (#K) — the bundle-wide `id → shape` index, for resolving a
+  // `mask.source.kind:"shape"` ref to inlined coverage geometry.
+  const shapeIndex = useShapeIndex();
 
   // Hooks must run unconditionally — the early-return for unknown
   // kinds happens *after* every hook has fired.
@@ -163,7 +168,15 @@ function Node({ node, store }: TreeProps): ReactNode {
   // unmasked) with a diagnostic — never passthrough.
   if (resolved.mask !== undefined) {
     const spec = parseMaskSpec(resolved.mask, node.id);
-    const built = spec ? buildMask(spec, allowedHosts, node.id) : null;
+    // #K — resolve a shape ref to its inlined coverage geometry. The resolver
+    // reads ONLY the referenced shape's geometry (never its own mask), so a
+    // `mask → shape (carrying a mask) → …` chain is cut at depth 1 (anti-cycle).
+    // A pending ref → `buildMask` omits the mask (no crash).
+    const resolveShape = (ref: string) => {
+      const target = shapeIndex.get(ref);
+      return target ? buildMaskCoverageFromShape(target, target.id) : null;
+    };
+    const built = spec ? buildMask(spec, allowedHosts, node.id, resolveShape) : null;
     if (built) {
       body = (
         <div style={built.style}>

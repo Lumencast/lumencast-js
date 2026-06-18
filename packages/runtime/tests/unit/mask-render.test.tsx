@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 
 import { Tree } from "../../src/render/tree.js";
 import { AllowedHostsProvider } from "../../src/render/allowed-hosts.js";
+import { ShapeIndexProvider, buildShapeIndex } from "../../src/render/shape-index.js";
 import { addDiagnosticsHandler, type RenderDiagnostic } from "../../src/render/diagnostics.js";
 import { createStore } from "../../src/state/store.js";
 import { buildMask, parseMaskSpec, type MaskSpec } from "../../src/render/mask.js";
@@ -51,9 +52,30 @@ afterEach(async () => {
   errorSpy.mockRestore();
 });
 
+/** Indexed shapes a shape-source mask can reference (#K). The masked node and
+ *  these referenced shapes are siblings under a frame so the one-pass index
+ *  picks them up exactly as it would in a real bundle. */
+const REFERENCEABLE: RenderNode[] = [
+  { kind: "shape", id: "ellipse-9", props: { geometry: "circle", width: 80, height: 80 } },
+  { kind: "shape", id: "src1", props: { geometry: "rect", width: 40, height: 40 } },
+];
+
 async function render(node: RenderNode, wrap?: (t: ReactNode) => ReactNode): Promise<void> {
   const store = createStore();
-  const tree = <Tree node={node} store={store} />;
+  // #K — the mask resolves shape refs against the bundle-wide index. Wrap the
+  // masked node + the referenceable shapes under a root and index that root.
+  const treeRoot: RenderNode = {
+    kind: "frame",
+    id: "root",
+    props: { width: 200, height: 200 },
+    children: [node, ...REFERENCEABLE],
+  };
+  const index = buildShapeIndex(treeRoot);
+  const tree = (
+    <ShapeIndexProvider index={index}>
+      <Tree node={treeRoot} store={store} />
+    </ShapeIndexProvider>
+  );
   await act(async () => {
     root.render(wrap ? wrap(tree) : tree);
   });
@@ -65,8 +87,8 @@ const SHAPE_BASE = (mask: unknown): RenderNode => ({
   props: { geometry: "rect", width: 100, height: 100, mask },
 });
 
-describe("mask render — alpha/luminance + boolean ops", () => {
-  it("luminance/intersect emits a <mask> referenced by the wrapper", async () => {
+describe("mask render — alpha/luminance + boolean ops (#K inlined geometry)", () => {
+  it("luminance/intersect inlines the resolved shape geometry (no <use>)", async () => {
     await render(
       SHAPE_BASE({
         source: { kind: "shape", ref: "ellipse-9" },
@@ -81,11 +103,24 @@ describe("mask render — alpha/luminance + boolean ops", () => {
     // The wrapping div references the mask by url(#id).
     const id = maskEl?.getAttribute("id");
     expect(id).toBeTruthy();
-    const wrapper = container.querySelector(`div[style*="${id}"]`);
-    expect(wrapper).not.toBeNull();
-    // intersect → a single <use>, no full-coverage base rect.
+    expect(container.querySelector(`div[style*="${id}"]`)).not.toBeNull();
+    // #K — the dangling `<use href>` is GONE ; the referenced shape's geometry
+    // (ellipse-9 = circle) is inlined as white coverage paint.
+    expect(maskEl?.querySelector("use")).toBeNull();
+    const circle = maskEl?.querySelector("circle");
+    expect(circle).not.toBeNull();
+    expect(circle?.getAttribute("fill")).toBe("white");
+    // intersect → no full-coverage base rect.
     expect(maskEl?.querySelectorAll("rect").length).toBe(0);
-    expect(maskEl?.querySelector("use")?.getAttribute("href")).toBe("#ellipse-9");
+  });
+
+  it("a rect-geometry ref inlines a <rect> coverage element", async () => {
+    await render(
+      SHAPE_BASE({ source: { kind: "shape", ref: "src1" }, type: "luminance", op: "intersect" }),
+    );
+    const maskEl = container.querySelector("mask");
+    expect(maskEl?.querySelector("use")).toBeNull();
+    expect(maskEl?.querySelector("rect")?.getAttribute("fill")).toBe("white");
   });
 
   it("alpha type sets mask-type:alpha on the <mask> (T4 typed switch)", async () => {
@@ -97,38 +132,151 @@ describe("mask render — alpha/luminance + boolean ops", () => {
 
   it("union adds a full-coverage base rect, subtract carves it out", async () => {
     await render(
-      SHAPE_BASE({ source: { kind: "shape", ref: "src1" }, type: "luminance", op: "union" }),
+      SHAPE_BASE({ source: { kind: "shape", ref: "ellipse-9" }, type: "luminance", op: "union" }),
     );
     let maskEl = container.querySelector("mask");
+    // union : one full-coverage base rect + the inlined circle geometry.
     expect(maskEl?.querySelectorAll("rect").length).toBe(1);
-    expect(maskEl?.querySelector("use")).not.toBeNull();
+    expect(maskEl?.querySelector("circle")).not.toBeNull();
+    expect(maskEl?.querySelector("use")).toBeNull();
 
     await act(async () => root.unmount());
     root = createRoot(container);
     await render(
-      SHAPE_BASE({ source: { kind: "shape", ref: "src1" }, type: "luminance", op: "subtract" }),
+      SHAPE_BASE({
+        source: { kind: "shape", ref: "ellipse-9" },
+        type: "luminance",
+        op: "subtract",
+      }),
     );
     maskEl = container.querySelector("mask");
     expect(maskEl?.querySelectorAll("rect").length).toBe(1);
-    // subtract wraps the source paint to carve it out.
-    expect(maskEl?.querySelector("use")).not.toBeNull();
+    // subtract wraps the inlined source paint to carve it out.
+    expect(maskEl?.querySelector("circle")).not.toBeNull();
+    expect(maskEl?.querySelector("use")).toBeNull();
   });
 
-  it("position/size place the mask source numerically", async () => {
+  it("position offsets the inlined geometry numerically (typed translate)", async () => {
     await render(
       SHAPE_BASE({
-        source: { kind: "shape", ref: "src1" },
+        source: { kind: "shape", ref: "ellipse-9" },
         type: "luminance",
         op: "intersect",
         position: { x: 5, y: 7 },
-        size: { w: 30, h: 40 },
       }),
     );
-    const use = container.querySelector("mask use");
-    expect(use?.getAttribute("x")).toBe("5");
-    expect(use?.getAttribute("y")).toBe("7");
-    expect(use?.getAttribute("width")).toBe("30");
-    expect(use?.getAttribute("height")).toBe("40");
+    // The inlined geometry is wrapped in a translated group ; numbers only.
+    const g = container.querySelector("mask g[transform]");
+    expect(g?.getAttribute("transform")).toBe("translate(5 7)");
+    expect(g?.querySelector("circle")).not.toBeNull();
+  });
+});
+
+describe("mask render — shape ref resolution (#K invariants)", () => {
+  it("a PENDING ref (id not in the index) omits the mask without crashing", async () => {
+    await render(
+      SHAPE_BASE({
+        source: { kind: "shape", ref: "does-not-exist" },
+        type: "luminance",
+        op: "intersect",
+      }),
+    );
+    // No mask element ; the masked subtree still renders (unmasked).
+    expect(container.querySelector("mask")).toBeNull();
+    expect(container.querySelector('svg[viewBox="0 0 100 100"]')).not.toBeNull();
+    expect(diagnostics.some((d) => d.field === "mask.source.ref")).toBe(true);
+  });
+
+  it("anti-cycle : a shape that itself carries a mask contributes only its geometry (depth=1)", async () => {
+    // src1 is referenced ; here we make the masked node reference a shape that
+    // ALSO carries its own mask. The resolver inlines ONLY the geometry of the
+    // referenced shape, never re-entering the mask builder → no recursion.
+    const root2: RenderNode = {
+      kind: "frame",
+      id: "root",
+      props: { width: 200, height: 200 },
+      children: [
+        {
+          kind: "shape",
+          id: "masked-1",
+          props: {
+            geometry: "rect",
+            width: 100,
+            height: 100,
+            mask: { source: { kind: "shape", ref: "carrier" }, type: "luminance", op: "intersect" },
+          },
+        },
+        {
+          // The referenced shape carries its OWN mask referencing back the
+          // masked node — a `mask → shape → mask → …` cycle. Must NOT recurse.
+          kind: "shape",
+          id: "carrier",
+          props: {
+            geometry: "circle",
+            width: 60,
+            height: 60,
+            mask: {
+              source: { kind: "shape", ref: "masked-1" },
+              type: "luminance",
+              op: "intersect",
+            },
+          },
+        },
+      ],
+    };
+    const store = createStore();
+    const index = buildShapeIndex(root2);
+    await act(async () => {
+      root.render(
+        <ShapeIndexProvider index={index}>
+          <Tree node={root2} store={store} />
+        </ShapeIndexProvider>,
+      );
+    });
+    // Exactly two masks exist (one per masked shape) ; neither nests the other.
+    const masks = container.querySelectorAll("mask");
+    expect(masks.length).toBe(2);
+    masks.forEach((m) => {
+      // A mask inlines geometry only — never a nested <mask> (depth=1).
+      expect(m.querySelector("mask")).toBeNull();
+      expect(m.querySelector("use")).toBeNull();
+    });
+  });
+
+  it("a duplicate shape id is diagnosed ; the first occurrence is kept", async () => {
+    const root3: RenderNode = {
+      kind: "frame",
+      id: "root",
+      props: { width: 200, height: 200 },
+      children: [
+        { kind: "shape", id: "dup", props: { geometry: "circle", width: 10, height: 10 } },
+        { kind: "shape", id: "dup", props: { geometry: "rect", width: 20, height: 20 } },
+        {
+          kind: "shape",
+          id: "masked-1",
+          props: {
+            geometry: "rect",
+            width: 100,
+            height: 100,
+            mask: { source: { kind: "shape", ref: "dup" }, type: "luminance", op: "intersect" },
+          },
+        },
+      ],
+    };
+    const store = createStore();
+    const index = buildShapeIndex(root3);
+    await act(async () => {
+      root.render(
+        <ShapeIndexProvider index={index}>
+          <Tree node={root3} store={store} />
+        </ShapeIndexProvider>,
+      );
+    });
+    // The collision is diagnosed.
+    expect(diagnostics.some((d) => d.field === "id")).toBe(true);
+    // First occurrence (circle) wins → the mask inlines a circle, not a rect.
+    const maskEl = container.querySelector("mask");
+    expect(maskEl?.querySelector("circle")).not.toBeNull();
   });
 });
 
@@ -231,12 +379,20 @@ describe("mask render — T3 no executable markup from the bundle", () => {
     if (img) expect(img.getAttribute("href")).not.toBeNull();
   });
 
-  it("no dangerouslySetInnerHTML / innerHTML in the mask source module (static)", async () => {
+  it("no dangerouslySetInnerHTML / innerHTML on the mask path (static, #K)", async () => {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const src = readFileSync(join(process.cwd(), "src/render/mask.tsx"), "utf8");
-    expect(src).not.toContain("dangerouslySetInnerHTML");
-    expect(src).not.toContain("innerHTML");
+    // The whole mask path is markup-free : the builder, the shared geometry
+    // builder it inlines, and the index that resolves the ref (T3, A2.4).
+    for (const rel of [
+      "src/render/mask.tsx",
+      "src/render/shape-geometry.tsx",
+      "src/render/shape-index.tsx",
+    ]) {
+      const src = readFileSync(join(process.cwd(), rel), "utf8");
+      expect(src).not.toContain("dangerouslySetInnerHTML");
+      expect(src).not.toContain("innerHTML");
+    }
   });
 });
 

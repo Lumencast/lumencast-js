@@ -274,6 +274,51 @@ describe("mask — typed fields only, never a free SVG string (T3/T4)", () => {
   });
 });
 
+describe("id round-trip (ADR 002 A2.1 #K) — typed field, never dropped", () => {
+  it("preserves a node id verbatim through compilation", () => {
+    const { root, warns } = compile({
+      kind: "shape",
+      // @ts-expect-error — id is a typed LSMLBaseNode field
+      id: "fig-817:1991",
+      geometry: "circle",
+    });
+    expect(root.id).toBe("fig-817:1991");
+    // `id` is consumed by the common lowering path → no anti-drop warning.
+    expect(warns.some((w) => w.includes(".id"))).toBe(false);
+  });
+
+  it("a shape-source mask keeps its ref AND the referenced shape keeps its id", () => {
+    // The mapper (#K) emits a stable `id` on the referenced shape and a
+    // `mask.source.ref` pointing at it ; both must survive compilation so the
+    // runtime index can resolve the ref to the inlined geometry.
+    const { root } = compile({
+      kind: "frame",
+      children: [
+        {
+          kind: "shape",
+          // @ts-expect-error — id is a typed LSMLBaseNode field
+          id: "masked",
+          geometry: "rect",
+          mask: { source: { kind: "shape", ref: "fig-817:1991" }, type: "alpha", op: "intersect" },
+        },
+        {
+          kind: "shape",
+          // @ts-expect-error — id is a typed LSMLBaseNode field
+          id: "fig-817:1991",
+          geometry: "circle",
+        },
+      ],
+    });
+    const [masked, referenced] = root.children ?? [];
+    expect(masked?.id).toBe("masked");
+    expect((masked?.props?.["mask"] as { source: { ref: string } }).source.ref).toBe(
+      "fig-817:1991",
+    );
+    // The referenced shape's id survives so the index can key it.
+    expect(referenced?.id).toBe("fig-817:1991");
+  });
+});
+
 describe("parseObjectFit — closed enum", () => {
   it("accepts the enum, rejects the rest", () => {
     for (const f of ["cover", "contain", "fill", "none", "scale-down"]) {
