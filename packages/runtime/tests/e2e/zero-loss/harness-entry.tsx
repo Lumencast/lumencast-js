@@ -26,6 +26,7 @@ import { BroadcastMode } from "../../../src/modes/broadcast";
 import { LumencastRuntimeProvider } from "../../../src/overlay/runtime-context";
 import { compileBundle } from "../../../../compiler/src/index";
 import type { LSMLBundle } from "../../../../compiler/src/index";
+import { rewriteLayoutSrcs, rewriteDefaultsSrcs, type AssetTable } from "./asset-resolver";
 import fixture from "./fixtures/cover-817-3.lsml.json";
 
 // Deterministic 1×1 PNG data URIs, one solid colour per asset. A 1×1 image
@@ -47,6 +48,16 @@ function swatch(name: string): string | undefined {
   return (swatchCache[name] ??= solidPng(rgb[0], rgb[1], rgb[2]));
 }
 
+/** The toy fixture's content-addressed `assets/<name>.png` refs map to named
+ *  swatches; the asset-resolver applies this table to layout + defaults. Built
+ *  lazily (inside `main`, after the TDZ-safe microtask defer) because `swatch()`
+ *  reaches the `CRC_TABLE` const at the bottom of the module. */
+function swatchTable(): AssetTable {
+  return Object.fromEntries(
+    Object.keys(SWATCH_COLOURS).map((name) => [`assets/${name}.png`, swatch(name)!]),
+  );
+}
+
 /** A 1×1 opaque PNG of the given RGB, base64-encoded as a bounded data URI.
  *  Hand-built (no encoder dep): PNG signature + IHDR + IDAT(zlib stored) +
  *  IEND, with correct CRC32s. */
@@ -57,30 +68,21 @@ function solidPng(r: number, g: number, b: number): string {
   return `data:image/png;base64,${btoa(bin)}`;
 }
 
-function rewriteSrc(src: unknown): unknown {
-  if (typeof src !== "string") return src;
-  // `assets/<name>.png` → swatch by name.
-  const m = /^assets\/([a-z0-9]+)\.png$/i.exec(src);
-  const named = m ? swatch(m[1]) : undefined;
-  if (named) return named;
-  // Stub `data:` URIs emitted for inline image-fills / mask sources don't
-  // decode. Map the known stub to a neutral swatch so they paint. They are
-  // keyed by node in the fixture, so we cycle a stable colour.
-  if (src.startsWith("data:image/png;base64,iVBORw0KGgoBAgME")) return swatch("render3d");
-  return src;
-}
-
-/** Deep-rewrite every `src` (image-fill, mask source) in the layout tree. */
-function rewriteLayout(node: unknown): void {
+/** Map the toy fixture's known undecodable inline-stub `data:` URI to a swatch
+ *  (the named `assets/<name>.png` refs are handled by the shared resolver). */
+function rewriteStubDataUris(node: unknown): void {
   if (node === null || typeof node !== "object") return;
   if (Array.isArray(node)) {
-    for (const n of node) rewriteLayout(n);
+    for (const n of node) rewriteStubDataUris(n);
     return;
   }
   const obj = node as Record<string, unknown>;
-  if ("src" in obj) obj["src"] = rewriteSrc(obj["src"]);
+  const s = obj["src"];
+  if (typeof s === "string" && s.startsWith("data:image/png;base64,iVBORw0KGgoBAgME")) {
+    obj["src"] = swatch("render3d");
+  }
   for (const v of Object.values(obj)) {
-    if (v && typeof v === "object") rewriteLayout(v);
+    if (v && typeof v === "object") rewriteStubDataUris(v);
   }
 }
 
@@ -89,12 +91,15 @@ function main(): void {
     defaults?: Record<string, unknown>;
   };
 
-  // Rewrite inline image-fill / mask `src`s in the layout.
-  rewriteLayout(bundle.layout);
-
-  // Rewrite the `__lit.image.*` defaults (image-primitive `bind.src` targets).
-  const defaults: Record<string, unknown> = { ...(bundle.defaults ?? {}) };
-  for (const [k, v] of Object.entries(defaults)) defaults[k] = rewriteSrc(v);
+  // Resolve content-addressed `assets/<name>.png` refs (layout + defaults) to
+  // their swatch data-URIs via the shared resolver, then map the inline stub.
+  const table = swatchTable();
+  rewriteLayoutSrcs(bundle.layout, table);
+  rewriteStubDataUris(bundle.layout);
+  const defaults = rewriteDefaultsSrcs(
+    { ...((bundle.defaults as Record<string, unknown>) ?? {}) },
+    table,
+  );
 
   const compiled = compileBundle(bundle, {
     onWarn: (m) => console.warn("[harness:compile]", m),
