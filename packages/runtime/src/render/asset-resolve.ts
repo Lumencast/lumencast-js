@@ -1,21 +1,22 @@
-// Asset + font resolution for the zero-loss render harness (ADR 002 #J / RC#10).
+// Public asset + font resolution helpers for headless / host render (ADR 003 §3.2).
 //
-// The committed 817:3 bundle references its bitmaps as content-addressed paths
-// (`assets/<hash>.png|jpg`) bound through `__lit.image.*` defaults, with
-// `assets.allowedHosts = []`. A real broadcast host resolves those through its
-// asset pipeline; this module plays that host role for the harness in two
-// interchangeable modes:
+// These utilities let a HOST (Solar headless entry, a ZabCanvas render worker,
+// the zero-loss harness) resolve a bundle's content-addressed asset references
+// to concrete `data:` URIs and inject brand `@font-face`s BEFORE the first
+// frame — exactly as the zero-loss harness has always done (ADR 002 #J). They
+// are promoted here verbatim so every host resolves identically and exercises
+// the SAME host-allow gate the runtime applies internally.
 //
-//   - SWATCH mode (committed CI fixture): each reference maps to a bounded,
-//     per-family solid-colour `data:image/png` so the run is deterministic and
-//     bit-stable with NO external bytes. Used by `harness-entry.tsx`.
-//   - REAL mode (local measurement run): each `assets/<hash>.ext` reference maps
-//     to the actual asset bitmap, supplied as a pre-encoded `data:` URI table.
-//     Used by the `.scratch/` real-asset entry to measure true pixel SSIM.
-//
-// Both modes emit `data:image/*` URIs, which the runtime host-allow gate already
-// admits with `allowedHosts: []` (Bastion T6) — so NO gate is bypassed in either
-// mode; the resolver only ever substitutes one allowed scheme for another.
+// ── No-fetch contract (ADR 003 §3.2, D3, Bastion R2) ────────────────────────
+// NONE of these helpers performs a network fetch. They only rewrite a bundle's
+// `src` values against a caller-supplied table (`resolveSrc` /
+// `rewriteLayoutSrcs` / `rewriteDefaultsSrcs`) and load `@font-face`s from
+// caller-supplied `data:`/same-document URLs (`injectFonts`). The runtime never
+// reaches the network; the host owns where bytes come from. Both the input
+// table values and the font `src`s are expected to be `data:` (or otherwise
+// already host-allowed) URIs — substituting one already-admitted scheme for
+// another, so the deny-by-default `allowedHosts` gate stays the sole authority.
+// ─────────────────────────────────────────────────────────────────────────────
 
 /** A table mapping a bundle `src` reference to its resolved `data:` URI.
  *  Keys may be either the full `assets/<hash>.ext` path or a bare `<hash>`. */
@@ -27,7 +28,7 @@ export function resolveSrc(src: unknown, table: AssetTable): unknown {
   if (typeof src !== "string") return src;
   if (table[src]) return table[src];
   const m = /^assets\/([A-Za-z0-9]+)\.[A-Za-z0-9]+$/.exec(src);
-  if (m && table[m[1]]) return table[m[1]];
+  if (m && m[1] !== undefined && table[m[1]]) return table[m[1]];
   return src;
 }
 
@@ -61,7 +62,7 @@ export function rewriteDefaultsSrcs(
 
 /** A brand `@font-face` to inject before render. `src` is a `data:` URI (or any
  *  same-document URL) so no network/host-allow surface is involved. */
-export interface FontFace {
+export interface FontFaceSpec {
   family: string;
   weight: number | string;
   style?: string;
@@ -71,8 +72,9 @@ export interface FontFace {
 
 /** Inject `@font-face` rules and block until the faces are loaded, so the very
  *  first painted frame already uses the brand glyphs (no fallback-font flash).
- *  Returns the families that successfully loaded. */
-export async function injectFonts(faces: readonly FontFace[]): Promise<string[]> {
+ *  Returns the families that successfully loaded. Loads only from the supplied
+ *  `src` (expected `data:`); never fetches a remote host on its own behalf. */
+export async function injectFonts(faces: readonly FontFaceSpec[]): Promise<string[]> {
   const loaded: string[] = [];
   for (const f of faces) {
     try {
@@ -83,8 +85,12 @@ export async function injectFonts(faces: readonly FontFace[]): Promise<string[]>
       await face.load();
       (document as Document & { fonts: FontFaceSet }).fonts.add(face);
       loaded.push(f.family);
-    } catch (err) {
-      console.warn("[harness:font]", f.family, "failed to load:", err);
+    } catch {
+      // A font that fails to load is a documented gap, not a render-breaker:
+      // the fallback glyphs paint and the host can detect the missing family
+      // in the returned list. Never throw (would abort an otherwise-good
+      // render) and never log the value (R9) — the absent family name is in
+      // `f.family`, which the caller already holds.
     }
   }
   return loaded;
