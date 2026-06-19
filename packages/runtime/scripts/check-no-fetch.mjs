@@ -8,6 +8,15 @@
 // AFTER stripping comments and string/template literals, so the (heavily
 // documented) no-fetch contract comments do not trip the guard. Run in CI as a
 // dedicated step; exits non-zero on any violation.
+//
+// SCOPE — this is an anti-regression guard on TWO modules only
+// (`headless.tsx` + `asset-resolve.ts`); it is NOT a proof of hermeticity.
+// The real network invariant is `gateSrc` (deny-by-default host-allow) applied
+// at EVERY asset leaf that places an untrusted URL into the DOM — image,
+// image-fill, mask AND media (the latter added with ADR 003: a `<video src>`
+// is just as much a fetch trigger as an `<img src>`). A new leaf with a network
+// sink must route through `gateSrc`; this script will not catch it if it does
+// not, so the gate — not this guard — is the authority.
 
 import { readFileSync } from "node:fs";
 import { resolve, relative } from "node:path";

@@ -99,6 +99,40 @@ describe("renderBundleHeadless — production seam render (RC3/RC4)", () => {
     }
   });
 
+  // RC3 — `media` is an asset leaf too: a `<video src>` off the allowlist must
+  // be omitted + diagnosed exactly like `image`, or the headless Chromium of
+  // zabrender would emit an off-allowlist request (SSRF). No URL leaks (R9).
+  it("RC3 — an off-allowlist media src is omitted from the DOM + diagnosed", async () => {
+    const diagnostics: RenderDiagnostic[] = [];
+    const unsub = addDiagnosticsHandler((d) => diagnostics.push(d));
+    try {
+      const bundle = bundleWith(
+        { kind: "media", id: "clip", props: { src: REMOTE_OFF_ALLOWLIST } },
+        [GOOD_HOST],
+      );
+      const handle = mount({ bundle });
+      await handle.ready;
+      expect(target.querySelector("video")).toBeNull();
+      expect(target.innerHTML).not.toContain("evil.example");
+      const mediaDiag = diagnostics.find((d) => d.field === "media.src");
+      expect(mediaDiag).toBeDefined();
+      expect(JSON.stringify(diagnostics)).not.toContain("evil.example");
+    } finally {
+      unsub();
+    }
+  });
+
+  // RC3 — an allowed media host passes the gate and reaches the <video>.
+  it("RC3 — an allowed media src reaches the DOM", async () => {
+    const ALLOWED_VIDEO = `https://${GOOD_HOST}/intro.mp4`;
+    const bundle = bundleWith({ kind: "media", id: "clip", props: { src: ALLOWED_VIDEO } }, [
+      GOOD_HOST,
+    ]);
+    const handle = mount({ bundle });
+    await handle.ready;
+    expect(target.querySelector("video")?.getAttribute("src")).toBe(ALLOWED_VIDEO);
+  });
+
   it("RC3 — deny-by-default: a remote src with no allowlist is omitted", async () => {
     const bundle = bundleWith({ kind: "image", id: "logo", props: { src: GOOD_SRC, alt: "x" } });
     const handle = mount({ bundle });
