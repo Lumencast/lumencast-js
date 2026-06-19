@@ -42,7 +42,12 @@ export function Image({ resolved, nodeId, transitionFor, animateInitial }: Primi
         objectPosition: position,
         width,
         height,
-        willChange: "opacity, transform",
+        // NB: NO `will-change` here. Promoting the <img> to its own GPU layer
+        // hoists it out of the wrapper's paint buffer, so a `mix-blend-mode`
+        // on the wrapper (Sunshine screen, Ruby20 / caramel hard-light) blends
+        // an EMPTY box with the backdrop → the blend silently no-ops and the
+        // image's contribution (the diagonal light streaks, the warm Ruby) is
+        // lost. Static images don't need the compositor hint anyway.
       }}
       initial={play.initial}
       animate={play.animate}

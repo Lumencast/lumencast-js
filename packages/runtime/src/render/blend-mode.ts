@@ -36,6 +36,8 @@ const BLEND_MODES: ReadonlySet<string> = new Set([
   "saturation",
   "color",
   "luminosity",
+  // Figma LINEAR_DODGE (add) — exact additive blend, gentler than color-dodge.
+  "plus-lighter",
 ]);
 
 /**

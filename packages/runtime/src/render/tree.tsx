@@ -15,10 +15,15 @@ import { StaggerContext, computeStaggerDelayMs } from "./stagger-context";
 import { useBindAnimate } from "./bind-animate";
 import { checkNodeProps } from "./prop-allowlist";
 import { emitDiagnostic } from "./diagnostics";
-import { buildMask, parseMaskSpec } from "./mask";
+import { buildMask, parseMaskSpec, MASK_FEATHER_PAD } from "./mask";
+import { parseBlendMode } from "./blend-mode";
 import { useAllowedHosts } from "./allowed-hosts";
 import { useShapeIndex } from "./shape-index";
-import { buildMaskCoverageFromShape, buildMaskCoverageFromGroup } from "./shape-geometry";
+import {
+  buildMaskCoverageFromShape,
+  buildMaskCoverageFromGroup,
+  coverageIsFeathered,
+} from "./shape-geometry";
 
 export interface TreeProps {
   node: RenderNode;
@@ -115,11 +120,31 @@ function Node({ node, store }: TreeProps): ReactNode {
   // kind (text/shape/image/media/instance/stack/grid) is placed by the
   // wrapper. A node without `x`/`y` gets `position: undefined` → normal
   // flow (RC#2 non-regression).
+  // A masked node with a real blend hoists that blend above the mask wrapper
+  // (the mask isolates an inner `mix-blend-mode`). Compute it once here so the
+  // universal prop and the wrapper below agree.
+  const maskHoistsBlend =
+    resolved.mask !== undefined &&
+    typeof resolved.blendMode === "string" &&
+    parseBlendMode(resolved.blendMode) !== undefined;
   const universal = {
     visible: typeof resolved.visible === "boolean" ? resolved.visible : undefined,
     opacity:
       typeof resolved.universal_opacity === "number" ? resolved.universal_opacity : undefined,
-    rotation: typeof resolved.rotation === "number" ? resolved.rotation : undefined,
+    // A frame applies its own static rotation (frame.tsx) so it pivots around
+    // its centre ; the wrapper has no box for a self-positioning frame and would
+    // pivot around a collapsed (0-height) box. Non-frames keep it on the wrapper
+    // (they DO carry position/size there).
+    rotation:
+      node.kind === "frame"
+        ? undefined
+        : typeof resolved.rotation === "number"
+          ? resolved.rotation
+          : undefined,
+    // Mirror (Figma scaleY(-1)) — like rotation, a frame mirrors itself
+    // (frame.tsx) ; non-frames carry it on the wrapper, composed with rotation.
+    flipY: node.kind === "frame" ? undefined : resolved.flipY === true,
+    blur: typeof resolved.blur === "number" ? resolved.blur : undefined,
     sizing: extractSizing(resolved.sizing),
     position: node.kind === "frame" ? undefined : extractPosition(resolved),
     size: node.kind === "frame" ? undefined : extractSize(resolved),
@@ -127,7 +152,13 @@ function Node({ node, store }: TreeProps): ReactNode {
     // primitive ; the wrapper re-validates it against the closed enum
     // before applying `mix-blend-mode` (T4 runtime gate). Pass the raw
     // resolved value through ; the wrapper omits anything off the enum.
-    blendMode: typeof resolved.blendMode === "string" ? resolved.blendMode : undefined,
+    // A blend on a MASKED node is hoisted ABOVE the mask wrapper (see below) —
+    // a CSS mask forms an isolating group, so a `mix-blend-mode` left on the
+    // (inner) wrapper would fold over a transparent backdrop (the caramel
+    // hard-light showed the raw blue wave instead of compositing over the warm
+    // gradient). Drop it here when it will be hoisted.
+    blendMode:
+      typeof resolved.blendMode === "string" && !maskHoistsBlend ? resolved.blendMode : undefined,
   };
 
   // ADR 002 §3.1 (D1) — a container holding at least one absolutely
@@ -146,34 +177,30 @@ function Node({ node, store }: TreeProps): ReactNode {
       ? { ...resolved, ...bindAnimate.colorProps }
       : resolved;
 
-  let body = (
-    <UniversalWrapper {...universal}>
-      <Primitive
-        resolved={resolvedWithColors}
-        nodeId={node.id}
-        transitionFor={transitionFor}
-        animateInitial={node.animate_initial}
-        establishesContainingBlock={hasAbsoluteChild}
-      >
-        {children}
-      </Primitive>
-    </UniversalWrapper>
+  const primitiveEl = (
+    <Primitive
+      resolved={resolvedWithColors}
+      nodeId={node.id}
+      transitionFor={transitionFor}
+      animateInitial={node.animate_initial}
+      establishesContainingBlock={hasAbsoluteChild}
+    >
+      {children}
+    </Primitive>
   );
 
-  // ADR 002 §3.2 (#E) — a typed `mask` lowered onto the node becomes a real
-  // `<mask>` SVG element + a CSS `mask: url(#…)` on a wrapping div. The mask
-  // is built ENTIRELY from typed fields (T3 : never markup from the bundle) ;
-  // its enums are re-validated (T4) and an image source is host-gated (T1/T2)
-  // before any `href`. A rejected / malformed mask is omitted (body renders
-  // unmasked) with a diagnostic — never passthrough.
+  // ADR 002 §3.2 (#E) — a typed `mask` lowered onto the node. Build it up-front
+  // so an IMAGE mask (CSS `mask-image`) can sit INSIDE the wrapper — it must
+  // rotate WITH the content under the wrapper's transform, else an outer
+  // un-rotated mask clips a mis-rotated crop (the caramel wave shrank off-box).
+  // A group/shape SVG mask stays OUTSIDE (its coverage is authored in the parent
+  // coordinate space). The mask is built ENTIRELY from typed fields (T3) ; enums
+  // re-validated (T4), image source host-gated (T1/T2) before any `href`.
+  let built: ReturnType<typeof buildMask> | null = null;
   if (resolved.mask !== undefined) {
     const spec = parseMaskSpec(resolved.mask, node.id);
     // #K/#O — resolve a ref to its inlined coverage geometry, routed on the
-    // referenced node's `kind` : a `shape` → its own outline (#K) ; a `frame`
-    // (GROUP/FRAME container) → the composite of its visible children (#O). The
-    // resolver reads ONLY geometry (never any node's own mask), so a
-    // `mask → … → mask` chain is cut at depth 1 (anti-cycle). A pending ref →
-    // `buildMask` omits the mask (no crash).
+    // referenced node's `kind` (shape → own outline ; frame → visible children).
     const resolveShape = (ref: string) => {
       const target = shapeIndex.get(ref);
       if (!target) return null;
@@ -181,17 +208,80 @@ function Node({ node, store }: TreeProps): ReactNode {
         ? buildMaskCoverageFromGroup(target, target.id)
         : buildMaskCoverageFromShape(target, target.id);
     };
-    const built = spec ? buildMask(spec, allowedHosts, node.id, resolveShape) : null;
-    if (built) {
-      body = (
-        <div style={built.style}>
-          <svg width={0} height={0} style={{ position: "absolute" }} aria-hidden>
-            <defs>{built.def}</defs>
-          </svg>
-          {body}
-        </div>
-      );
+    // A FEATHERED coverage (a blurred mask edge, e.g. the bg-texture ellipse) is
+    // the only case that needs the wrapper feather pad. Detect it from the mask
+    // SOURCE group's children so a sharp mask skips the pad entirely (no extra
+    // wrapper, no structural change).
+    let feather = false;
+    if (spec) {
+      const src = spec.source as { kind?: string; ref?: unknown };
+      if ((src.kind === "group" || src.kind === "shape") && typeof src.ref === "string") {
+        const t = shapeIndex.get(src.ref);
+        feather = t ? coverageIsFeathered(t) : false;
+      }
     }
+    built = spec
+      ? buildMask(spec, allowedHosts, node.id, resolveShape, extractSize(resolved), feather)
+      : null;
+  }
+  const isImageMask =
+    built !== null && built.style != null && "maskImage" in (built.style as object);
+
+  let inner: ReactNode = primitiveEl;
+  if (built && isImageMask) {
+    // Image mask co-located with the content : the CSS mask-image is on a box the
+    // wrapper's transform rotates, keeping its alpha aligned to the wave.
+    inner = <div style={{ width: "100%", height: "100%", ...built.style }}>{inner}</div>;
+  }
+
+  let body = <UniversalWrapper {...universal}>{inner}</UniversalWrapper>;
+
+  if (built && !isImageMask) {
+    // The (group/shape) mask wrapper MUST own a real box for the CSS mask to clip
+    // anything : its content is `position:absolute`, so fill the parent's
+    // containing block to share the absolutely-placed body's coordinate space.
+    // `overflow:hidden` bounds the (oversized) masked content to this box — the
+    // CSS `mask` alone does NOT clip it (removing it leaked the 2786×1491 tile
+    // group everywhere).
+    // Only a FEATHERED mask grows the box (+ shifts the coverage, mask.tsx) ;
+    // a sharp mask uses pad 0 → inset:0, identical to the un-padded structure.
+    const pad = built.feather ? MASK_FEATHER_PAD : 0;
+    body = (
+      <div
+        style={{
+          position: "absolute",
+          inset: -pad,
+          overflow: "hidden",
+          ...built.style,
+        }}
+      >
+        <svg width={0} height={0} style={{ position: "absolute" }} aria-hidden>
+          <defs>{built.def}</defs>
+        </svg>
+        {/* Inner box inset by +PAD cancels the wrapper's −PAD grow for the
+            CONTENT — the body keeps its original coordinates while the masked
+            box (and its feathered rim) is the bigger one. */}
+        <div style={{ position: "absolute", inset: pad }}>{body}</div>
+      </div>
+    );
+  }
+  // Hoist the node's blend ABOVE the wrapper+mask : an outer box carrying ONLY
+  // `mix-blend-mode` (no transform / opacity / filter / mask) so it composites
+  // the masked result with the SCENE backdrop. The caramel 3d-render then
+  // hard-lights over the warm gradient (orange) instead of its raw image (blue).
+  if (built && maskHoistsBlend) {
+    const hoisted = parseBlendMode(resolved.blendMode);
+    body = (
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          mixBlendMode: hoisted as React.CSSProperties["mixBlendMode"],
+        }}
+      >
+        {body}
+      </div>
+    );
   }
 
   // Scalar bindAnimate channels apply on a wrapping motion.div (same

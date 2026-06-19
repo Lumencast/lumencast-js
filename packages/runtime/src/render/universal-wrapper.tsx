@@ -33,6 +33,13 @@ export interface UniversalProps {
   visible?: boolean;
   opacity?: number;
   rotation?: number;
+  /** Mirror across the local X axis (Figma `scaleY(-1)`, negative-determinant
+   *  transform). Composed with `rotation` on the wrapper so image/shape leaves
+   *  mirror like frames do — without it the caramel 3d-render rendered as the
+   *  un-mirrored wave (blue where Figma is orange). */
+  flipY?: boolean;
+  /** Figma LAYER_BLUR radius (px) → CSS `filter: blur()`. */
+  blur?: number;
   sizing?: { x?: SizingMode; y?: SizingMode };
   /** ADR 002 §3.1 (D1) — parent-relative absolute placement. When set,
    *  the wrapper pins the primitive at `left:x; top:y` (position:absolute)
@@ -72,10 +79,22 @@ function flexFor(mode: SizingMode | undefined): string | undefined {
   }
 }
 
+/** Collapse a {x,y} sizing pair to a single `flex` shorthand. When both axes
+ *  agree, that value ; otherwise honour x (horizontal stacks dominate broadcast
+ *  boards — the renderer doesn't know the parent's axis here). */
+function sizingToFlex(sizing: { x?: SizingMode; y?: SizingMode } | undefined): string | undefined {
+  const x = flexFor(sizing?.x);
+  const y = flexFor(sizing?.y);
+  if (x === y && x !== undefined) return x;
+  return x ?? y;
+}
+
 export function UniversalWrapper({
   visible,
   opacity,
   rotation,
+  flipY,
+  blur,
   sizing,
   position,
   size,
@@ -91,7 +110,6 @@ export function UniversalWrapper({
   // CSS `mix-blend-mode` keyword ; anything else is `undefined` and never
   // reaches the style (no free CSS string, no passthrough).
   const mixBlendMode = parseBlendMode(blendMode);
-
   // No-op fast path — when no universal props are set, render children
   // directly. Lets simple bundles avoid an extra DOM node per primitive.
   // A child WITHOUT `position` never enters the absolute branch, so the
@@ -99,23 +117,78 @@ export function UniversalWrapper({
   // non-regression : RC#2).
   const hasOpacity = typeof opacity === "number" && opacity !== 1;
   const hasRotation = typeof rotation === "number" && rotation !== 0;
+  const hasFlipY = flipY === true;
+  const hasBlur = typeof blur === "number" && blur > 0;
   const hasSizing = sizing?.x !== undefined || sizing?.y !== undefined;
   const hasPosition = position !== undefined;
   const hasBlendMode = mixBlendMode !== undefined;
-  if (!hasOpacity && !hasRotation && !hasSizing && !hasPosition && !hasBlendMode) {
+  if (
+    !hasOpacity &&
+    !hasRotation &&
+    !hasFlipY &&
+    !hasBlur &&
+    !hasSizing &&
+    !hasPosition &&
+    !hasBlendMode
+  ) {
     return <>{children}</>;
+  }
+
+  // Build the transform string (rotation + mirror). `rotate(θ) scaleY(-1)`
+  // applies the mirror first (rightmost), then the rotation — matching Figma's
+  // `rotate·scaleY(-1)` matrix (the caramel's −114° + mirror).
+  let transform: string | undefined;
+  if (hasRotation || hasFlipY) {
+    const parts: string[] = [];
+    if (hasRotation) parts.push(`rotate(${rotation}deg)`);
+    if (hasFlipY) parts.push("scaleY(-1)");
+    transform = parts.join(" ");
+  }
+  // Figma LAYER_BLUR → CSS blur (radius ≈ 2× the CSS sigma, measured on 817:3).
+  // (A gamma-correct linearRGB blur was tried to close the bg-shine corner's ~23 R
+  // deficit vs the Figma PNG ; it measured WORSE — the deficit is in the high-R
+  // channel, which is gamma-INVARIANT — and supersampling the render closed that
+  // corner anyway. The Chromium(sRGB)≠Figma(linearRGB) blur gap is else irreducible.)
+  const filter = hasBlur ? `blur(${blur / 2}px)` : undefined;
+
+  const sizingFlex = hasSizing ? sizingToFlex(sizing) : undefined;
+
+  // A `mix-blend-mode` composites with the SCENE backdrop only when its element
+  // does not also form an isolating group. `transform`, `opacity < 1` and
+  // `filter` each force the element into its own group, so the blend would fold
+  // over a TRANSPARENT backdrop instead — the caramel hard-light then shows the
+  // raw blue wave rather than compositing over the warm gradient, a screen layer
+  // silently no-ops. When the node needs BOTH a blend and one of those, SPLIT:
+  // the blend (+ absolute placement) lives on the OUTER box, the isolating
+  // transform/opacity/blur on an INNER box that carries the sized content.
+  if (hasBlendMode && (hasOpacity || transform !== undefined || filter !== undefined)) {
+    const outer: CSSProperties = { mixBlendMode: mixBlendMode as CSSProperties["mixBlendMode"] };
+    if (hasPosition) {
+      outer.position = "absolute";
+      outer.left = position.x;
+      outer.top = position.y;
+    }
+    if (sizingFlex !== undefined) outer.flex = sizingFlex;
+    const inner: CSSProperties = {};
+    if (typeof size?.w === "number") inner.width = size.w;
+    if (typeof size?.h === "number") inner.height = size.h;
+    if (hasOpacity) inner.opacity = opacity;
+    if (transform !== undefined) inner.transform = transform;
+    if (filter !== undefined) inner.filter = filter;
+    return (
+      <div style={outer}>
+        <div style={inner}>{children}</div>
+      </div>
+    );
   }
 
   const style: CSSProperties = {};
   if (hasOpacity) style.opacity = opacity;
-  if (hasRotation) style.transform = `rotate(${rotation}deg)`;
+  if (transform !== undefined) style.transform = transform;
+  if (filter !== undefined) style.filter = filter;
   if (hasBlendMode) style.mixBlendMode = mixBlendMode as CSSProperties["mixBlendMode"];
-
-  // ADR 002 §3.1 (D1) — absolute placement relative to the nearest
-  // positioned ancestor. The Tree only forms `position` from a finite
-  // `{x,y}` pair, so the two numbers reach inline CSS as plain px with
-  // no untrusted-value passthrough. `size` (when present) fixes the box ;
-  // otherwise the box hugs its content.
+  // ADR 002 §3.1 (D1) — absolute placement relative to the nearest positioned
+  // ancestor. `size` (when present) fixes the box ; otherwise it hugs content.
   if (hasPosition) {
     style.position = "absolute";
     style.left = position.x;
@@ -123,25 +196,7 @@ export function UniversalWrapper({
     if (typeof size?.w === "number") style.width = size.w;
     if (typeof size?.h === "number") style.height = size.h;
   }
-
-  // sizing.x / sizing.y map to flex / row-flex behaviour. The
-  // x-axis applies along the main axis of a horizontal stack ; the
-  // y-axis along a vertical stack. We emit `flex` (covers both via
-  // CSS's flex-direction) and rely on the parent stack for orientation.
-  if (hasSizing) {
-    const x = flexFor(sizing?.x);
-    const y = flexFor(sizing?.y);
-    // Emit a single flex declaration when both axes agree, otherwise
-    // ship explicit grow/shrink/basis based on the dominant intent.
-    if (x === y && x !== undefined) {
-      style.flex = x;
-    } else {
-      // Heuristic : honour x for horizontal stacks (most common in
-      // broadcast UIs). Renderer doesn't know the parent's axis here ;
-      // a future iteration could thread that through context.
-      style.flex = x ?? y;
-    }
-  }
+  if (sizingFlex !== undefined) style.flex = sizingFlex;
 
   return <div style={style}>{children}</div>;
 }

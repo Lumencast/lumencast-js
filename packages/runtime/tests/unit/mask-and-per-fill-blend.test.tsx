@@ -108,7 +108,7 @@ describe("integration #K mask × #L per-fill blend — coexist without interfere
     expect(maskEl).not.toBeNull();
     // Inlined, not a dangling <use href> (T3 : geometry built element-by-element).
     expect(maskEl?.querySelector("use")).toBeNull();
-    const coverage = maskEl?.querySelector("circle");
+    const coverage = maskEl?.querySelector("ellipse");
     expect(coverage).not.toBeNull();
     expect(coverage?.getAttribute("fill")).toBe("white");
 
@@ -116,7 +116,7 @@ describe("integration #K mask × #L per-fill blend — coexist without interfere
     //    not a colour/blend reproduction, #K hypothesis 2). The per-fill
     //    blend lives ONLY on the painted layers, never inside <mask>. ─────
     expect((coverage as SVGElement).style.mixBlendMode).toBe("");
-    const maskBlends = [...(maskEl?.querySelectorAll("rect, circle, line, g") ?? [])].map(
+    const maskBlends = [...(maskEl?.querySelectorAll("rect, ellipse, line, g") ?? [])].map(
       (el) => (el as SVGElement).style.mixBlendMode,
     );
     expect(maskBlends.every((b) => b === "")).toBe(true);
@@ -159,6 +159,6 @@ describe("integration #K mask × #L per-fill blend — coexist without interfere
 
     // The mask is unaffected by the rejected fill blend.
     const maskEl = container.querySelector("mask");
-    expect(maskEl?.querySelector("circle")?.getAttribute("fill")).toBe("white");
+    expect(maskEl?.querySelector("ellipse")?.getAttribute("fill")).toBe("white");
   });
 });

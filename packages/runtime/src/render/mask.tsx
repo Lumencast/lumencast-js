@@ -27,7 +27,7 @@
 // `null` (omit — render the subtree unmasked) or a `{ def, style }` pair. It
 // NEVER throws and NEVER echoes a rejected value.
 
-import type { ReactElement } from "react";
+import type { ReactElement, CSSProperties } from "react";
 import { checkHostAllowed } from "@lumencast/protocol";
 import { emitDiagnostic } from "./diagnostics";
 
@@ -43,6 +43,14 @@ export type ShapeRefResolver = (ref: string) => ReactElement | null;
  *  has no compile-time dependency on the compiler package. */
 const MASK_TYPES = new Set(["alpha", "luminance"]);
 
+/** Feather pad (px). The group/shape mask wrapper's `overflow:hidden` box is
+ *  grown by this on every side (tree.tsx, `inset:-PAD`) and the coverage is
+ *  shifted back by the same amount (buildMask) so a BLURRED mask rim isn't
+ *  re-cut into a hard square at the box edge. Generous enough for the
+ *  bg-texture ellipse's ~3σ (53.88 CSS sigma) feather. Sharp masks are
+ *  unaffected (their alpha-0 region simply sits inside the grown box). */
+export const MASK_FEATHER_PAD = 180;
+
 /** Closed `mask.op` allowlist — runtime half of the double-gate (T4). */
 const MASK_OPS = new Set(["intersect", "subtract", "union"]);
 
@@ -51,7 +59,7 @@ const MASK_OPS = new Set(["intersect", "subtract", "union"]);
  *  (#O) references a GROUP/FRAME container by id, composited downstream. */
 export type MaskSource =
   | { kind: "shape"; ref: string }
-  | { kind: "image"; src: string }
+  | { kind: "image"; src: string; srcRect?: { x: number; y: number; w: number; h: number } }
   | { kind: "group"; ref: string };
 
 /** The typed mask spec as it reaches the runtime (compiler-lowered or a live
@@ -69,9 +77,14 @@ export interface BuiltMask {
   /** The `<mask>` element to drop into the masked element's SVG `<defs>`. */
   def: ReactElement;
   /** Inline style applying the mask to the masked subtree's wrapper. */
-  style: { mask: string; WebkitMask: string };
+  style: CSSProperties;
   /** The generated mask id (for `url(#…)` wiring and test assertions). */
   id: string;
+  /** True when the coverage is FEATHERED (a blurred edge) : the masked wrapper
+   *  must grow by MASK_FEATHER_PAD (tree.tsx) so the soft rim isn't re-cut into a
+   *  square, and the coverage here is pre-shifted by the same pad. A sharp mask
+   *  leaves this false and skips the pad entirely (no structural change). */
+  feather: boolean;
 }
 
 let maskIdSeq = 0;
@@ -124,7 +137,14 @@ export function parseMaskSpec(value: unknown, nodeId: string | undefined): MaskS
   if (s.kind === "shape" && typeof s.ref === "string") {
     source = { kind: "shape", ref: s.ref };
   } else if (s.kind === "image" && typeof s.src === "string") {
-    source = { kind: "image", src: s.src };
+    // Preserve the mask source's box (`srcRect`: offset from THIS node + size)
+    // when present — it places/sizes the CSS mask to the source raster, shared
+    // across siblings of different boxes (the caramel halo + drift fix).
+    const sr = s.srcRect as { x?: unknown; y?: unknown; w?: unknown; h?: unknown } | undefined;
+    source =
+      sr && finite(sr.x) && finite(sr.y) && finite(sr.w) && finite(sr.h)
+        ? { kind: "image", src: s.src, srcRect: { x: sr.x, y: sr.y, w: sr.w, h: sr.h } }
+        : { kind: "image", src: s.src };
   } else if (s.kind === "group" && typeof s.ref === "string") {
     source = { kind: "group", ref: s.ref };
   } else {
@@ -166,6 +186,8 @@ export function buildMask(
   allowedHosts: readonly string[] | undefined,
   nodeId: string | undefined,
   resolveShape?: ShapeRefResolver,
+  boxSize?: { w?: number; h?: number },
+  feather = false,
 ): BuiltMask | null {
   // T4 — defence in depth : re-validate the enums even though parseMaskSpec
   // already did, so `buildMask` is safe to call on any typed input.
@@ -206,13 +228,49 @@ export function buildMask(
     // For an alpha mask, read the source's own alpha (mask-type:alpha on the
     // <mask>) ; luminance is the SVG default. The image fills the masked box
     // when no explicit geometry is given.
-    content = (
-      <image
-        href={mask.source.src}
-        preserveAspectRatio="none"
-        {...(Object.keys(geom).length > 0 ? geom : { width: "100%", height: "100%" })}
-      />
-    );
+    // External <image> in an SVG <mask> (0×0 SVG) never loads. For `intersect`
+    // apply the raster directly as a CSS mask-image. The masked image content is
+    // drawn with `object-fit: cover` (Figma scaleMode FILL), so the mask raster
+    // — the SAME source image — must `cover` too, else a `Wpx Hpx` (stretch)
+    // mask clips a differently-scaled crop and the caramel ribbon shrinks /
+    // shifts off its wave. `cover` keeps the alpha aligned with the content.
+    if (mask.op === "intersect") {
+      const mode = mask.type === "alpha" ? "alpha" : "luminance";
+      const url = `url("${mask.source.src}")`;
+      // Place + size the mask to the SOURCE raster's box (`srcRect`: offset from
+      // this node's box top-left + size), shared by every masked sibling — NOT
+      // `cover` of each sibling's box (inflates → orange halo) nor centred
+      // (drifts → mask pulled down). The caramel gradient (1146) and 3d-render
+      // (930) thus clip to the SAME wave at the SAME spot.
+      const rect = (mask.source as { srcRect?: { x: number; y: number; w: number; h: number } })
+        .srcRect;
+      const usable = rect && finite(rect.x) && finite(rect.y) && finite(rect.w) && finite(rect.h);
+      const sizeCss = usable ? `${rect!.w}px ${rect!.h}px` : "cover";
+      const posCss = usable ? `${rect!.x}px ${rect!.y}px` : "center";
+      return {
+        def: <defs key={id} />,
+        style: {
+          maskImage: url,
+          WebkitMaskImage: url,
+          maskSize: sizeCss,
+          WebkitMaskSize: sizeCss,
+          maskRepeat: "no-repeat",
+          WebkitMaskRepeat: "no-repeat",
+          maskPosition: posCss,
+          WebkitMaskPosition: posCss,
+          maskMode: mode,
+        } as CSSProperties,
+        id,
+        feather: false,
+      };
+    }
+    const imgGeom =
+      Object.keys(geom).length > 0
+        ? geom
+        : finite(boxSize?.w) && finite(boxSize?.h)
+          ? { x: 0, y: 0, width: boxSize.w, height: boxSize.h }
+          : { width: "100%", height: "100%" };
+    content = <image href={mask.source.src} preserveAspectRatio="none" {...imgGeom} />;
   } else {
     // Shape (#K) or group/frame (#O) source — INLINE the referenced node's
     // resolved coverage geometry into the `<mask>`, built element-by-element
@@ -261,6 +319,21 @@ export function buildMask(
       );
   }
 
+  // Feather pad : the mask wrapper's box is grown by MASK_FEATHER_PAD on every
+  // side (tree.tsx, `inset:-PAD`) so a BLURRED coverage edge isn't re-cut into a
+  // hard square by the wrapper's `overflow:hidden`. The coverage is shifted back
+  // by the SAME amount here (userSpaceOnUse), so the mask stays put while the box
+  // grows. A sharp mask is unaffected (its alpha-0 region just sits inside the
+  // grown box). Applied to the coverage only — never the full-coverage union/
+  // subtract rect, which must keep spanning the whole (grown) box.
+  if (feather) {
+    content = (
+      <g key="feather-pad" transform={`translate(${MASK_FEATHER_PAD} ${MASK_FEATHER_PAD})`}>
+        {content}
+      </g>
+    );
+  }
+
   // `union` widens coverage : a base full-coverage white rect is unioned with
   // the source paint. `subtract` removes the source area from full coverage by
   // painting the source black over a white base. `intersect` (default) keeps
@@ -290,16 +363,27 @@ export function buildMask(
     <mask
       id={id}
       key={id}
-      maskUnits="userSpaceOnUse"
-      // T4 — alpha vs luminance is a typed switch, not a free attribute. The
-      // value comes from the closed enum, never author text. (kebab key so the
-      // SVG `mask-type` attribute is emitted verbatim across React versions.)
-      {...(mask.type === "alpha" ? { "mask-type": "alpha" } : {})}
+      // `maskContentUnits` (not `maskUnits`) places the coverage in the masked
+      // element's user space. The mask REGION is widened to −50%..150% of the
+      // masked box (objectBoundingBox units) so a FEATHERED coverage (the
+      // bg-texture ellipse blurred 107.76) keeps its soft rim — the default
+      // −10%..120% clipped the blur to a hard SQUARE edge. (The prior
+      // `maskUnits="userSpaceOnUse"` WITHOUT x/y/width/height shrank the region
+      // to the 0×0 defs-svg viewport, hiding every group/shape-masked subtree —
+      // the platform-wide bug ; an explicit region is the robust form.)
+      maskContentUnits="userSpaceOnUse"
+      x="-50%"
+      y="-50%"
+      width="200%"
+      height="200%"
+      // T4 — alpha vs luminance is a typed switch (closed enum, never author
+      // text ; kebab key so `mask-type` is emitted verbatim across React).
+      {...(mask.type === "alpha" && mask.source.kind !== "image" ? { "mask-type": "alpha" } : {})}
     >
       {inner}
     </mask>
   );
 
   const ref = `url(#${id})`;
-  return { def, style: { mask: ref, WebkitMask: ref }, id };
+  return { def, style: { mask: ref, WebkitMask: ref }, id, feather };
 }

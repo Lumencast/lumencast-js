@@ -50,7 +50,7 @@ async function renderFrame(
     );
   });
   const div = [...container.querySelectorAll("div")].find((d) =>
-    (d.getAttribute("style") ?? "").includes("will-change"),
+    ["width:", "height:"].every((k) => (d.getAttribute("style") ?? "").includes(k)),
   );
   expect(div).toBeDefined();
   return div as HTMLDivElement;
@@ -58,7 +58,7 @@ async function renderFrame(
 
 function frameDiv(): HTMLDivElement {
   const div = [...container.querySelectorAll("div")].find((d) =>
-    (d.getAttribute("style") ?? "").includes("will-change"),
+    ["width:", "height:"].every((k) => (d.getAttribute("style") ?? "").includes(k)),
   );
   expect(div).toBeDefined();
   return div as HTMLDivElement;
@@ -169,7 +169,7 @@ describe("clipsContent nested frames", () => {
       root.render(<Tree node={node} store={createStore()} />);
     });
     const divs = [...container.querySelectorAll("div")].filter((d) =>
-      (d.getAttribute("style") ?? "").includes("will-change"),
+      ["width:", "height:"].every((k) => (d.getAttribute("style") ?? "").includes(k)),
     );
     expect(divs).toHaveLength(2);
     const [parent, child] = divs as [HTMLDivElement, HTMLDivElement];
@@ -199,7 +199,7 @@ describe("clipsContent nested frames", () => {
       root.render(<Tree node={node} store={createStore()} />);
     });
     const divs = [...container.querySelectorAll("div")].filter((d) =>
-      (d.getAttribute("style") ?? "").includes("will-change"),
+      ["width:", "height:"].every((k) => (d.getAttribute("style") ?? "").includes(k)),
     );
     expect(divs).toHaveLength(2);
     const [parent, child] = divs as [HTMLDivElement, HTMLDivElement];

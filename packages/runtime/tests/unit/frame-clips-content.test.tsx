@@ -65,9 +65,14 @@ async function renderFrame(
 }
 
 function frameDiv(): HTMLDivElement {
-  const div = [...container.querySelectorAll("div")].find((d) =>
-    (d.getAttribute("style") ?? "").includes("will-change"),
-  );
+  // The Frame primitive's own box carries the explicit size (width/height) ;
+  // for a frame the UniversalWrapper carries no size, so this uniquely picks the
+  // Frame div. (It used to be found by a frame-specific `will-change`, since
+  // removed — a permanent will-change isolated mix-blend-mode descendants.)
+  const div = [...container.querySelectorAll("div")].find((d) => {
+    const s = d.getAttribute("style") ?? "";
+    return s.includes("width:") && s.includes("height:");
+  });
   expect(div).toBeDefined();
   return div as HTMLDivElement;
 }
@@ -110,9 +115,10 @@ describe("frame clipsContent — DOM smoke (ADR 001 RC#5)", () => {
       children: [{ kind: "frame", props: { width: 50, height: 50, x: 200, y: 200 } }],
     };
     await render(node, createStore());
-    const divs = [...container.querySelectorAll("div")].filter((d) =>
-      (d.getAttribute("style") ?? "").includes("will-change"),
-    );
+    const divs = [...container.querySelectorAll("div")].filter((d) => {
+      const s = d.getAttribute("style") ?? "";
+      return s.includes("width:") && s.includes("height:");
+    });
     expect(divs).toHaveLength(2);
     const [parent, child] = divs as [HTMLDivElement, HTMLDivElement];
     expect(parent.contains(child)).toBe(true);

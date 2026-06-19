@@ -132,7 +132,6 @@ export function Shape({ resolved, nodeId, transitionFor, animateInitial }: Primi
       initial={play.initial}
       animate={play.animate}
       transition={transition}
-      style={{ willChange: "opacity, transform" }}
     >
       {allDefs.length > 0 && <defs>{allDefs}</defs>}
       {stackedFills.map((layer, i) =>

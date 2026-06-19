@@ -42,7 +42,11 @@ export default tseslint.config(
       "**/scripts/**/*.mjs",
       "**/scripts/**/*.js",
       "examples/**/*.ts",
+      // e2e harness/runners legitimately log to stdout (CLI render + compare,
+      // the Vite harness entry). Cover .mjs/.tsx, not just .ts.
       "**/tests/e2e/**/*.ts",
+      "**/tests/e2e/**/*.tsx",
+      "**/tests/e2e/**/*.mjs",
     ],
     rules: {
       "no-console": "off",

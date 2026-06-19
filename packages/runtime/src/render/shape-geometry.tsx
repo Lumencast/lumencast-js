@@ -87,13 +87,19 @@ export function buildShapeOutline(
     );
   }
   if (kind === "circle") {
+    // A Figma ELLIPSE node lowers to `circle`, but its box is often NON-square
+    // (the bg-shine glows are 699×428, 955×586…). Render an <ellipse> with the
+    // per-axis radii so the shape keeps its real size — a circle (w===h) is the
+    // degenerate case. Rendering a `min(w,h)` circle shrank the glows → the warm
+    // wash came out too dark and the wrong shape.
     return (
-      <circle
+      <ellipse
         key={keyPrefix}
         style={style}
         cx={width / 2}
         cy={height / 2}
-        r={Math.min(width, height) / 2 - strokeWidth / 2}
+        rx={Math.max(0, width / 2 - strokeWidth / 2)}
+        ry={Math.max(0, height / 2 - strokeWidth / 2)}
         fill={paint.fill}
         stroke={stroke}
         strokeWidth={strokeWidth}
@@ -218,6 +224,25 @@ export function buildMaskCoverageFromGroup(
   return <g key="mask-group-cover">{parts}</g>;
 }
 
+/** True when a group-mask source carries a LAYER_BLUR on any (depth-bounded)
+ *  visible geometry child — the FEATHERED case (e.g. the bg-texture ellipse
+ *  blurred 107.76) whose soft rim needs the wrapper feather pad (mask.tsx /
+ *  tree.tsx). A sharp source returns false so the pad is skipped entirely — no
+ *  extra wrapper, no structural change to ordinary masks. Mirrors the blur
+ *  detection + descent bounds of `collectCoverage`. */
+export function coverageIsFeathered(
+  node: RenderNode,
+  depth: number = GROUP_MASK_MAX_DEPTH,
+): boolean {
+  if (node.kind !== "frame") return false;
+  for (const child of (node.children ?? []) as RenderNode[]) {
+    if (isHidden(child)) continue;
+    if (numProp(child.props, "blur") > 0) return true;
+    if (child.kind === "frame" && depth > 0 && coverageIsFeathered(child, depth - 1)) return true;
+  }
+  return false;
+}
+
 /** Recursive (depth-bounded) collector : returns the white coverage elements
  *  of `node`'s visible direct children, translating each by its own `x`/`y`.
  *  A child container is descended only while `depth > 0`. NEVER reads a node's
@@ -254,6 +279,25 @@ function collectCoverage(
     // A non-geometry child (text/image/instance) or a too-deep sub-container
     // contributes nothing — the mask is a coverage stencil over geometry only.
     if (part === null) continue;
+    // A LAYER_BLUR on the coverage shape FEATHERS the mask edge — the bg-texture
+    // mask is a single ellipse blurred 107.76 (radius), so the WP tiles fade out
+    // softly instead of being cut by a hard circular edge. Apply it via an SVG
+    // `<feGaussianBlur>` (radius ≈ 2× the CSS sigma) with a WIDE filter region :
+    // a plain CSS `filter:blur()` on an SVG element clips to the default
+    // −10%..120% box, so the feathered ellipse re-appeared with a hard SQUARE
+    // edge. The wide region (−120%..340%) lets the soft rim spread unclipped.
+    const childBlur = numProp(child.props, "blur");
+    if (childBlur > 0) {
+      const bf = `lumen-mcov-blur-${nodeId ?? "x"}-${keyPrefix}-${i}`;
+      part = (
+        <g key={`${keyPrefix}-b-${i}`}>
+          <filter id={bf} x="-120%" y="-120%" width="340%" height="340%">
+            <feGaussianBlur stdDeviation={childBlur / 2} />
+          </filter>
+          <g filter={`url(#${bf})`}>{part}</g>
+        </g>
+      );
+    }
     const x = numProp(child.props, "x");
     const y = numProp(child.props, "y");
     out.push(
