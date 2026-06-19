@@ -218,9 +218,13 @@ describe("containing block — a layout container with an absolute child flips r
       props: { width: 50, height: 50 },
       children: [{ kind: "text", id: "abs", props: { value: "x", x: 10, y: 12 } }],
     });
-    const frameDiv = [...container.querySelectorAll("div")].find((d) =>
-      (d.getAttribute("style") ?? "").includes("will-change"),
-    )!;
+    // The Frame primitive owns the box (width+height) ; the wrapper carries no
+    // size for a frame, so this is the (outermost) frame div. (Was keyed on a
+    // frame-specific `will-change`, since removed — it isolated descendant blends.)
+    const frameDiv = [...container.querySelectorAll("div")].find((d) => {
+      const s = d.getAttribute("style") ?? "";
+      return s.includes("width:") && s.includes("height:");
+    })!;
     expect(frameDiv.style.position).toBe("absolute");
     const wrap = absoluteWrapperOf(container.querySelector("span")!);
     expect(frameDiv.contains(wrap)).toBe(true);

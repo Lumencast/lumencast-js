@@ -107,7 +107,7 @@ describe("mask render — alpha/luminance + boolean ops (#K inlined geometry)", 
     // #K — the dangling `<use href>` is GONE ; the referenced shape's geometry
     // (ellipse-9 = circle) is inlined as white coverage paint.
     expect(maskEl?.querySelector("use")).toBeNull();
-    const circle = maskEl?.querySelector("circle");
+    const circle = maskEl?.querySelector("ellipse");
     expect(circle).not.toBeNull();
     expect(circle?.getAttribute("fill")).toBe("white");
     // intersect → no full-coverage base rect.
@@ -137,7 +137,7 @@ describe("mask render — alpha/luminance + boolean ops (#K inlined geometry)", 
     let maskEl = container.querySelector("mask");
     // union : one full-coverage base rect + the inlined circle geometry.
     expect(maskEl?.querySelectorAll("rect").length).toBe(1);
-    expect(maskEl?.querySelector("circle")).not.toBeNull();
+    expect(maskEl?.querySelector("ellipse")).not.toBeNull();
     expect(maskEl?.querySelector("use")).toBeNull();
 
     await act(async () => root.unmount());
@@ -152,7 +152,7 @@ describe("mask render — alpha/luminance + boolean ops (#K inlined geometry)", 
     maskEl = container.querySelector("mask");
     expect(maskEl?.querySelectorAll("rect").length).toBe(1);
     // subtract wraps the inlined source paint to carve it out.
-    expect(maskEl?.querySelector("circle")).not.toBeNull();
+    expect(maskEl?.querySelector("ellipse")).not.toBeNull();
     expect(maskEl?.querySelector("use")).toBeNull();
   });
 
@@ -168,7 +168,7 @@ describe("mask render — alpha/luminance + boolean ops (#K inlined geometry)", 
     // The inlined geometry is wrapped in a translated group ; numbers only.
     const g = container.querySelector("mask g[transform]");
     expect(g?.getAttribute("transform")).toBe("translate(5 7)");
-    expect(g?.querySelector("circle")).not.toBeNull();
+    expect(g?.querySelector("ellipse")).not.toBeNull();
   });
 });
 
@@ -276,14 +276,14 @@ describe("mask render — shape ref resolution (#K invariants)", () => {
     expect(diagnostics.some((d) => d.field === "id")).toBe(true);
     // First occurrence (circle) wins → the mask inlines a circle, not a rect.
     const maskEl = container.querySelector("mask");
-    expect(maskEl?.querySelector("circle")).not.toBeNull();
+    expect(maskEl?.querySelector("ellipse")).not.toBeNull();
   });
 });
 
 describe("mask render — image source host gate (T1/T2)", () => {
   const ALLOWED = ["cdn.example.com"];
 
-  it("an allowed https image source reaches the <image href>", async () => {
+  it("an allowed https image source reaches the mask-image style", async () => {
     await render(
       SHAPE_BASE({
         source: { kind: "image", src: "https://cdn.example.com/m.png" },
@@ -292,9 +292,15 @@ describe("mask render — image source host gate (T1/T2)", () => {
       }),
       (t) => <AllowedHostsProvider hosts={ALLOWED}>{t}</AllowedHostsProvider>,
     );
-    expect(container.querySelector("mask image")?.getAttribute("href")).toBe(
-      "https://cdn.example.com/m.png",
+    // An image-source mask is applied as a CSS `mask-image: url(...)` on the
+    // masked element's box (NOT an inline <image> in a <mask>) — this is how the
+    // caramel wave mask works. The host-gated URL must reach that style. (happy-dom
+    // drops `mask-image` from the serialized style attribute but keeps it on the
+    // CSSOM, so we read `style.maskImage` rather than the attribute string.)
+    const masked = [...container.querySelectorAll<HTMLDivElement>("div")].find((d) =>
+      (d.style.maskImage ?? "").includes("https://cdn.example.com/m.png"),
     );
+    expect(masked, "host-gated image URL must reach the mask-image style").toBeDefined();
   });
 
   it("an off-allowlist host is rejected ; no <image>, mask omitted, no leak", async () => {

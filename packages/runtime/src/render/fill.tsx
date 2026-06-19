@@ -97,10 +97,13 @@ export function renderFill(fill: Fill): FillRenderResult {
   // or out-of-enum value yields `undefined` → the layer renders `normal`.
   const mixBlendMode = parseBlendMode(fill.blendMode);
   if (fill.kind === "solid") {
-    // Solid fill — no defs needed, just hand the colour to fill.
-    // SVG fill-opacity composes with element opacity multiplicatively
-    // so we apply both consistently.
-    return { defs: [], ref: fill.color, mixBlendMode };
+    // Solid fill — no defs needed, just hand the colour to fill. A solid fill
+    // carries its OWN opacity (Figma per-paint alpha, e.g. the bg-texture tiles
+    // at 6% white) ; fold it into the colour so the SVG path actually renders
+    // at that alpha instead of full-strength (the tiles came out 16× too bright
+    // pre-mask, near-black post-mask).
+    const ref = fill.opacity !== undefined ? cssWithOpacity(fill.color, fill.opacity) : fill.color;
+    return { defs: [], ref, mixBlendMode };
   }
   if (fill.kind === "image") {
     // LSML 1.2 §3.2 — image-fill on a shape. Rendered as an SVG <pattern>
@@ -120,14 +123,28 @@ export function renderFill(fill: Fill): FillRenderResult {
   }
   const id = nextGradientId();
   if (fill.kind === "linear-gradient") {
-    // angle_deg : 0 = bottom-to-top per §4.12 (matches CSS `linear-gradient`)
-    const angle = fill.angle_deg ?? 0;
-    // Translate angle (degrees from up) to SVG x1/y1/x2/y2 in user space.
-    const rad = ((angle - 90) * Math.PI) / 180; // 0° → x1=0,y1=1 (bottom-up)
-    const x1 = 0.5 - 0.5 * Math.cos(rad);
-    const y1 = 0.5 - 0.5 * Math.sin(rad);
-    const x2 = 0.5 + 0.5 * Math.cos(rad);
-    const y2 = 0.5 + 0.5 * Math.sin(rad);
+    let x1: number, y1: number, x2: number, y2: number;
+    // Honour the Figma `gradientTransform` : the gradient axis (offset 0 → 1) is
+    // column 0 = (a, b) of the matrix, in the SVG's y-down space. `angle_deg`
+    // alone ignored it and mis-oriented the picto/caramel gradients (too red).
+    const t = (fill as { transform?: number[] }).transform;
+    if (Array.isArray(t) && t.length === 6 && Number.isFinite(t[0]) && Number.isFinite(t[1])) {
+      const len = Math.hypot(t[0], t[1]) || 1;
+      const an = t[0] / len;
+      const bn = t[1] / len;
+      x1 = 0.5 - 0.5 * an;
+      y1 = 0.5 - 0.5 * bn;
+      x2 = 0.5 + 0.5 * an;
+      y2 = 0.5 + 0.5 * bn;
+    } else {
+      // angle_deg : 0 = bottom-to-top per §4.12.
+      const angle = fill.angle_deg ?? 0;
+      const rad = ((angle - 90) * Math.PI) / 180; // 0° → x1=0,y1=1 (bottom-up)
+      x1 = 0.5 - 0.5 * Math.cos(rad);
+      y1 = 0.5 - 0.5 * Math.sin(rad);
+      x2 = 0.5 + 0.5 * Math.cos(rad);
+      y2 = 0.5 + 0.5 * Math.sin(rad);
+    }
     const defs = [
       <linearGradient
         key={id}
@@ -277,8 +294,12 @@ function fillToCss(fill: Fill, nodeId?: string): string | null {
       warnRejectedColor("fill.color", nodeId);
       return null;
     }
+    // A solid fill carries its OWN opacity (Figma layer-fill alpha, e.g. a 14%
+    // white pill) — apply it like a gradient stop's, else the layer renders
+    // fully opaque and hides whatever it overlays.
+    const c = fill.opacity !== undefined ? cssWithOpacity(color, fill.opacity) : color;
     // Wrap solid in linear-gradient so it can stack with other layers.
-    return `linear-gradient(${color}, ${color})`;
+    return `linear-gradient(${c}, ${c})`;
   }
   const safeStops: string[] = [];
   for (const s of fill.stops) {
@@ -292,7 +313,17 @@ function fillToCss(fill: Fill, nodeId?: string): string | null {
   }
   const stops = safeStops.join(", ");
   if (fill.kind === "linear-gradient") {
-    const angle = fill.angle_deg ?? 0;
+    let angle = fill.angle_deg ?? 0;
+    // Honour the Figma `gradientTransform` when present : the gradient's main
+    // axis (offset 0 → 1) is column 0 = (a, b) of the 2×3 matrix. CSS `Ndeg`
+    // measures clockwise from "up" and screen-y points down, so that direction
+    // maps to `atan2(a, -b)`. `angle_deg` alone ignored the matrix and rendered
+    // the Cover's warm base as a 270° (horizontal) wash instead of the real 180°
+    // (warm at top) — leaving the top-right black under the Ruby20 hard-light.
+    const t = (fill as { transform?: number[] }).transform;
+    if (Array.isArray(t) && t.length === 6 && Number.isFinite(t[0]) && Number.isFinite(t[1])) {
+      angle = ((Math.atan2(t[0], -t[1]) * 180) / Math.PI + 360) % 360;
+    }
     return `linear-gradient(${angle}deg, ${stops})`;
   }
   // radial-gradient

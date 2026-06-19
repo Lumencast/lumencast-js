@@ -247,11 +247,21 @@ describe("A — KIND_NODE_KEYS exhaustiveness : no spurious warn on full spec'd 
     expect(diagnostics.filter((d) => d.field !== "pathData")).toHaveLength(0);
   });
 
-  it("shape: unknown key 'shadow' warns", () => {
+  // NB: `shadow` is now a KNOWN universal key (DROP/INNER_SHADOW → box-shadow),
+  // so it no longer warns — `cornerSmoothing` (a Figma property absent from LSML)
+  // stands in as the unknown-key probe for a shape.
+  it("shape: unknown key 'cornerSmoothing' warns", () => {
     const { diagnostics } = collect(
-      bundle({ kind: "shape", id: "sh2", geometry: "rect", shadow: true } as unknown as LSMLNode),
+      bundle({
+        kind: "shape",
+        id: "sh2",
+        geometry: "rect",
+        cornerSmoothing: 0.6,
+      } as unknown as LSMLNode),
     );
-    expect(diagnostics).toContainEqual(expect.objectContaining({ nodeId: "sh2", field: "shadow" }));
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({ nodeId: "sh2", field: "cornerSmoothing" }),
+    );
   });
 
   it("media: all consumed keys → silent", () => {

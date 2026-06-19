@@ -113,7 +113,6 @@ export function Text({ resolved, nodeId, transitionFor, animateInitial }: Primit
         color: colour,
         textAlign: align as React.CSSProperties["textAlign"],
         ...typography,
-        willChange: "opacity, transform",
       }}
       initial={play.initial}
       animate={play.animate}

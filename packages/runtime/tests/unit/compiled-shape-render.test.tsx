@@ -63,14 +63,17 @@ describe("compiler→render e2e (RC#2)", () => {
     expect(rect?.getAttribute("rx")).toBe("8");
   });
 
-  it("geometry: circle renders a <circle> (geometry prop honoured)", async () => {
+  it("geometry: circle renders an <ellipse> (geometry prop honoured)", async () => {
     await renderCompiled({
       kind: "shape",
       geometry: "circle",
       size: { w: 40, h: 40 },
       fill: "#00ff00",
     });
-    expect(container.querySelector("circle")).not.toBeNull();
+    // A `circle` geometry lowers to an <ellipse> with per-axis radii (rx=ry for a
+    // square box) — non-square ellipse nodes must keep their real size (the
+    // bg-shine glows were shrunk to circles, darkening the warm wash).
+    expect(container.querySelector("ellipse")).not.toBeNull();
     expect(container.querySelector("rect")).toBeNull();
   });
 

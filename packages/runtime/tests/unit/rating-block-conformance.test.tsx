@@ -144,11 +144,16 @@ function absoluteWrapperOf(leaf: Element): HTMLElement {
   return w as HTMLElement;
 }
 
-/** Locate the frame div by its `will-change: transform, opacity` marker. */
+/** Locate the frame div by its own box (the Frame primitive sets width+height ;
+ *  a frame's UniversalWrapper carries no size, so this is the outermost — and
+ *  first in DOM order — div with both). Previously keyed on a frame-specific
+ *  `will-change`, since removed (a permanent will-change isolated descendant
+ *  mix-blend-mode). */
 function frameDiv(): HTMLDivElement {
-  const div = [...container.querySelectorAll<HTMLDivElement>("div")].find((d) =>
-    (d.getAttribute("style") ?? "").includes("will-change"),
-  );
+  const div = [...container.querySelectorAll<HTMLDivElement>("div")].find((d) => {
+    const s = d.getAttribute("style") ?? "";
+    return s.includes("width:") && s.includes("height:");
+  });
   expect(div, "frame div must exist").toBeDefined();
   return div!;
 }

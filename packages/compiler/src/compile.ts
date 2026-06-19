@@ -149,6 +149,9 @@ const COMMON_NODE_KEYS: ReadonlySet<string> = new Set([
   "visible",
   "opacity",
   "rotation",
+  "flipY",
+  "blur",
+  "shadow",
   "sizing",
   "position",
   // 1.2+ (ADR 002 §3.2) — universal blend mode + typed mask on every node.
@@ -171,7 +174,7 @@ const REPEAT_NODE_KEYS: ReadonlySet<string> = new Set([
 const KIND_NODE_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   stack: new Set(["direction", "gap", "align", "justify", "padding", "rtl"]),
   grid: new Set(["columns", "rows", "gap", "padding"]),
-  frame: new Set(["size", "position", "background", "backgrounds", "clipsContent"]),
+  frame: new Set(["size", "position", "background", "backgrounds", "clipsContent", "cornerRadius"]),
   text: new Set(["style", "format", "maxLines"]),
   image: new Set(["alt", "size", "fit"]),
   shape: new Set([
@@ -340,6 +343,9 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
       // 1.1 §4.3 — clip children to the frame bounds. The spec default
       // (`true`) is applied runtime-side ; only explicit values forward.
       if (node.clipsContent !== undefined) props["clipsContent"] = node.clipsContent;
+      // Rounded container (pills, picto square). Canonical RenderNode name is
+      // `radius` (frame.tsx reads it as `border-radius`).
+      if (node.cornerRadius !== undefined) props["radius"] = node.cornerRadius;
       break;
 
     case "text":
@@ -432,6 +438,9 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
   if (node.visible !== undefined) props["visible"] = node.visible;
   if (node.opacity !== undefined) props["opacity"] = node.opacity;
   if (node.rotation !== undefined) props["rotation"] = node.rotation;
+  if (node.flipY !== undefined) props["flipY"] = node.flipY;
+  if (node.blur !== undefined) props["blur"] = node.blur;
+  if (node.shadow !== undefined) props["shadow"] = node.shadow;
   if (node.sizing !== undefined) props["sizing"] = node.sizing;
   if (node.position !== undefined && props["x"] === undefined && props["y"] === undefined) {
     // Frame's case above already sets x/y from `position` ; the universal

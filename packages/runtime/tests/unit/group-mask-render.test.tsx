@@ -103,7 +103,7 @@ describe("group mask — composite of visible children (union, A4.4)", () => {
     const maskEl = container.querySelector("mask");
     expect(maskEl).not.toBeNull();
     // Union = both white outlines present in the same <mask> (no <use>).
-    expect(maskEl?.querySelector("circle")?.getAttribute("fill")).toBe("white");
+    expect(maskEl?.querySelector("ellipse")?.getAttribute("fill")).toBe("white");
     expect(maskEl?.querySelector("rect")?.getAttribute("fill")).toBe("white");
     expect(maskEl?.querySelector("use")).toBeNull();
     // The second child is translated by its (x,y).
@@ -140,7 +140,7 @@ describe("group mask — composite of visible children (union, A4.4)", () => {
     ]);
     const maskEl = container.querySelector("mask");
     // Only the single visible ellipse contributes coverage.
-    expect(maskEl?.querySelectorAll("circle").length).toBe(1);
+    expect(maskEl?.querySelectorAll("ellipse").length).toBe(1);
   });
 
   it("a pending group ref omits the mask without crashing", async () => {
@@ -193,7 +193,7 @@ describe("group mask — anti-cycle depth=1 (A4.4 / Bastion fixture 1)", () => {
     // exactly one mask per masked node ; the group composite never nests a mask.
     masks.forEach((m) => expect(m.querySelector("mask")).toBeNull());
     const groupMask = container.querySelector("mask");
-    expect(groupMask?.querySelector("circle")).not.toBeNull();
+    expect(groupMask?.querySelector("ellipse")).not.toBeNull();
     expect(groupMask?.querySelector("use")).toBeNull();
   });
 
@@ -229,7 +229,7 @@ describe("group mask — anti-cycle depth=1 (A4.4 / Bastion fixture 1)", () => {
     // depth 0 rect + depth 1 circle = 2 outlines ; the depth-2 rect is dropped.
     // Total <rect> coverage elements = 1 (the depth-0 rect) — the deep rect at
     // level 2 must NOT appear.
-    expect(maskEl?.querySelectorAll("circle").length).toBe(1);
+    expect(maskEl?.querySelectorAll("ellipse").length).toBe(1);
     expect(maskEl?.querySelectorAll("rect").length).toBe(1);
   });
 });
@@ -280,7 +280,7 @@ describe("group mask — non-regression shape-source (#K)", () => {
       { kind: "shape", id: "fig-s", props: { geometry: "circle", width: 50, height: 50 } },
     ]);
     const maskEl = container.querySelector("mask");
-    expect(maskEl?.querySelector("circle")?.getAttribute("fill")).toBe("white");
+    expect(maskEl?.querySelector("ellipse")?.getAttribute("fill")).toBe("white");
     expect(maskEl?.querySelector("use")).toBeNull();
   });
 });

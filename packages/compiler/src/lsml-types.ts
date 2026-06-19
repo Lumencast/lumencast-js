@@ -36,7 +36,8 @@ export type LSMLBlendMode =
   | "hue"
   | "saturation"
   | "color"
-  | "luminosity";
+  | "luminosity"
+  | "plus-lighter";
 
 /** 1.2+ — how an image-fill / image source is fitted into its box
  *  (closed enum → CSS `object-fit` ; ADR 002 §3.2 ; Bastion T4). */
@@ -239,6 +240,22 @@ export interface LSMLBaseNode {
   opacity?: number;
   /** 1.1+ — rotation in degrees (LSML §5.4). Defaults to 0. */
   rotation?: number;
+  /** Mirror the node vertically (`scaleY(-1)`) — from a negative Figma
+   *  transform determinant. Composed with `rotation` at render. */
+  flipY?: boolean;
+  /** Figma LAYER_BLUR radius (px) → CSS `filter: blur()`. */
+  blur?: number;
+  /** Figma DROP_SHADOW / INNER_SHADOW → CSS `box-shadow` / `filter: drop-shadow`.
+   *  Each layer is `{ inset?, color, x, y, blur, spread }` (colour strict-parsed
+   *  runtime-side, RC#11). The picto square's depth halo + orange/red inner rim. */
+  shadow?: Array<{
+    inset?: boolean;
+    color: string;
+    x: number;
+    y: number;
+    blur: number;
+    spread: number;
+  }>;
   /** 1.1+ — per-axis sizing mode (LSML §5.4). */
   sizing?: { x?: "fixed" | "hug" | "fill"; y?: "fixed" | "hug" | "fill" };
   /** 1.1+ — universal position relative to parent (LSML §5.4). */
@@ -284,6 +301,9 @@ export interface LSMLFrame extends LSMLBaseNode {
    *  default is `true` ; the default is runtime-side, the compiler only
    *  forwards an explicit value. */
   clipsContent?: boolean;
+  /** Figma `cornerRadius` (px) → canonical RenderNode `radius` (border-radius).
+   *  The rounded picto square (r=111). */
+  cornerRadius?: number;
 }
 
 export interface LSMLText extends LSMLBaseNode {
