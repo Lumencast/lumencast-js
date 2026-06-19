@@ -22,8 +22,7 @@ for (const f of readdirSync(`${EXPORTS}/assets`))
   copyFileSync(`${EXPORTS}/assets/${f}`, resolve(__dirname, "assets", f));
 const RUNTIME_ROOT = resolve(__dirname, "../../../.."); // packages/runtime
 const OUT =
-  process.argv[2] ??
-  "D:/Documents/Lumencast/lumencast-figma/.local-exports/render-817-3.png";
+  process.argv[2] ?? "D:/Documents/Lumencast/lumencast-figma/.local-exports/render-817-3.png";
 const PORT = 5219;
 
 const server = await createServer({
@@ -38,7 +37,9 @@ const server = await createServer({
       key: readFileSync(resolve(__dirname, "certs/key.pem")),
       cert: readFileSync(resolve(__dirname, "certs/cert.pem")),
     },
-    fs: { allow: ["D:/Documents/Lumencast/lumencast-js", "D:/Documents/Lumencast/lumencast-figma"] },
+    fs: {
+      allow: ["D:/Documents/Lumencast/lumencast-js", "D:/Documents/Lumencast/lumencast-figma"],
+    },
   },
 });
 await server.listen();
@@ -74,10 +75,15 @@ try {
 await page.waitForTimeout(800);
 // Grab at 2× (→ 3840×2160 device px), then downsample to 1920×1080 with a
 // high-quality canvas filter — supersampled AA that matches Figma's export.
-const superBuf = await page
-  .locator("#scene")
-  .screenshot({ clip: { x: 0, y: 0, width: 1920, height: 1080 }, timeout: 180_000, animations: "disabled" });
-const dsCtx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+const superBuf = await page.locator("#scene").screenshot({
+  clip: { x: 0, y: 0, width: 1920, height: 1080 },
+  timeout: 180_000,
+  animations: "disabled",
+});
+const dsCtx = await browser.newContext({
+  viewport: { width: 1920, height: 1080 },
+  deviceScaleFactor: 1,
+});
 const dsPage = await dsCtx.newPage();
 await dsPage.setContent(
   `<canvas id=dz width=1920 height=1080></canvas><img id=src src="data:image/png;base64,${superBuf.toString("base64")}">`,
@@ -147,7 +153,9 @@ const probe = await page.evaluate(() => {
   // does the logo/wordmark render? count white-ish SVG paths in the Main area
   const svgPaths = Array.from(document.querySelectorAll("svg path")).length;
   const texts = Array.from(document.querySelectorAll("*"))
-    .filter((e) => e.childNodes.length === 1 && e.firstChild?.nodeType === 3 && e.textContent.trim())
+    .filter(
+      (e) => e.childNodes.length === 1 && e.firstChild?.nodeType === 3 && e.textContent.trim(),
+    )
     .map((e) => e.textContent.trim().slice(0, 20))
     .slice(0, 10);
   return {
@@ -186,24 +194,47 @@ const logo = await page.evaluate(() => {
   });
   if (!main) return { found: false };
   const cs = getComputedStyle(main);
-  const paths = Array.from(main.querySelectorAll("path")).slice(0, 5).map((p) => {
-    const ps = getComputedStyle(p);
-    let bb = null;
-    try {
-      const b = p.getBBox();
-      bb = `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)}`;
-    } catch {
-      /* getBBox throws on non-rendered / detached nodes — leave bbox null */
-    }
-    const r = p.getBoundingClientRect();
-    return { fill: ps.fill, opacity: ps.opacity, display: ps.display, bbox: bb, screen: `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}` };
-  });
+  const paths = Array.from(main.querySelectorAll("path"))
+    .slice(0, 5)
+    .map((p) => {
+      const ps = getComputedStyle(p);
+      let bb = null;
+      try {
+        const b = p.getBBox();
+        bb = `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)}`;
+      } catch {
+        /* getBBox throws on non-rendered / detached nodes — leave bbox null */
+      }
+      const r = p.getBoundingClientRect();
+      return {
+        fill: ps.fill,
+        opacity: ps.opacity,
+        display: ps.display,
+        bbox: bb,
+        screen: `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`,
+      };
+    });
   // the <svg> wrapping the paths : its viewBox / size / position
-  const svgs = Array.from(main.querySelectorAll("svg")).slice(0, 3).map((s) => {
-    const r = s.getBoundingClientRect();
-    return { vb: s.getAttribute("viewBox"), wh: `${s.getAttribute("width")}x${s.getAttribute("height")}`, screen: `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`, cssPos: getComputedStyle(s).position };
-  });
-  return { found: true, mainOpacity: cs.opacity, mainOverflow: cs.overflow, mainBlend: cs.mixBlendMode, mainClip: cs.clipPath, paths, svgs };
+  const svgs = Array.from(main.querySelectorAll("svg"))
+    .slice(0, 3)
+    .map((s) => {
+      const r = s.getBoundingClientRect();
+      return {
+        vb: s.getAttribute("viewBox"),
+        wh: `${s.getAttribute("width")}x${s.getAttribute("height")}`,
+        screen: `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`,
+        cssPos: getComputedStyle(s).position,
+      };
+    });
+  return {
+    found: true,
+    mainOpacity: cs.opacity,
+    mainOverflow: cs.overflow,
+    mainBlend: cs.mixBlendMode,
+    mainClip: cs.clipPath,
+    paths,
+    svgs,
+  };
 });
 console.log("[logo]", JSON.stringify(logo, null, 1).slice(0, 1800));
 if (warnings.length) {

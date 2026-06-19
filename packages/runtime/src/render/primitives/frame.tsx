@@ -166,10 +166,7 @@ function numberOr(v: unknown, fallback: number): number {
  *     child instead of the wrapper's rectangular box). drop-shadow's blur maps
  *     to a Gaussian stdDeviation ; box-shadow uses 2×σ, so halve to match.
  *  Returns `{}` when nothing usable survives. */
-function buildShadows(
-  value: unknown,
-  nodeId?: string,
-): { filter?: string; boxShadow?: string } {
+function buildShadows(value: unknown, nodeId?: string): { filter?: string; boxShadow?: string } {
   if (!Array.isArray(value) || value.length === 0) return {};
   const dropParts: string[] = [];
   const boxParts: string[] = [];

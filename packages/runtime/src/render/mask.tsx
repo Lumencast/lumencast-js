@@ -242,9 +242,8 @@ export function buildMask(
       // `cover` of each sibling's box (inflates → orange halo) nor centred
       // (drifts → mask pulled down). The caramel gradient (1146) and 3d-render
       // (930) thus clip to the SAME wave at the SAME spot.
-      const rect = (
-        mask.source as { srcRect?: { x: number; y: number; w: number; h: number } }
-      ).srcRect;
+      const rect = (mask.source as { srcRect?: { x: number; y: number; w: number; h: number } })
+        .srcRect;
       const usable = rect && finite(rect.x) && finite(rect.y) && finite(rect.w) && finite(rect.h);
       const sizeCss = usable ? `${rect!.w}px ${rect!.h}px` : "cover";
       const posCss = usable ? `${rect!.x}px ${rect!.y}px` : "center";
@@ -379,9 +378,7 @@ export function buildMask(
       height="200%"
       // T4 — alpha vs luminance is a typed switch (closed enum, never author
       // text ; kebab key so `mask-type` is emitted verbatim across React).
-      {...(mask.type === "alpha" && mask.source.kind !== "image"
-        ? { "mask-type": "alpha" }
-        : {})}
+      {...(mask.type === "alpha" && mask.source.kind !== "image" ? { "mask-type": "alpha" } : {})}
     >
       {inner}
     </mask>
