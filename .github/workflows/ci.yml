@@ -112,6 +112,24 @@ jobs:
       - run: pnpm build
       - run: pnpm check:bundle
 
+  no-fetch-guard:
+    name: no-fetch-guard
+    runs-on: ubuntu-latest
+    needs: lockfile
+    # ADR 003 RC3 — the headless render path (renderBundleHeadless +
+    # render/asset-resolve) must never reach the network. Static scan of the
+    # source; no build needed (Bastion R2 — a fetch in the published runtime
+    # would be an SSRF surface).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:no-fetch
+
   e2e:
     name: e2e (Playwright)
     runs-on: ubuntu-latest

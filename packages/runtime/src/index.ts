@@ -46,3 +46,27 @@ export {
   isAuthoringProfile,
   validateBundleProfiles,
 } from "./render/bundle.js";
+
+// Headless render (ADR 003) — render an already-compiled RenderBundle into a
+// live DOM node, no WS, ready when layout + fonts settle. Hosts (Solar headless
+// entry, ZabCanvas render worker, the zero-loss harness) screenshot the target
+// once `ready` resolves. The runtime does DOM + readiness only — no fetch, no
+// screenshot. Dynamically pulls BroadcastMode so it adds no eager weight to the
+// `mount`/broadcast path (RC6).
+export { renderBundleHeadless } from "./render/headless.js";
+export type { HeadlessRenderOptions, HeadlessRenderHandle } from "./render/headless.js";
+
+// Asset / font resolution helpers for headless hosts (ADR 003 §3.2). No-fetch:
+// they only rewrite a bundle's `src`s against a caller table and load fonts
+// from caller-supplied `data:` URIs. The host-allow gate stays the sole
+// authority. (`FontFace` is the public type name per ADR 003 RC5; it is the
+// spec object — distinct from the DOM `FontFace` constructor.)
+export {
+  resolveSrc,
+  rewriteLayoutSrcs,
+  rewriteDefaultsSrcs,
+  injectFonts,
+  type AssetTable,
+  type FontFaceSpec,
+  type FontFaceSpec as FontFace,
+} from "./render/asset-resolve.js";

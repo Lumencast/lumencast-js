@@ -1,10 +1,17 @@
 // Zero-loss render harness entry (ADR 002 #J / RC#10).
 //
+// ADR 003: this harness is now the FIRST CONSUMER of the public headless render
+// API. It calls `renderBundleHeadless` from `@lumencast/runtime` (via source
+// here) instead of mounting `LumencastRuntimeProvider`/`BroadcastMode`
+// internals itself — so a green SSIM here proves the PUBLIC export renders
+// through the exact production seam, with no fidelity regression (RC2). The host
+// role (compile, asset resolution) stays here; the runtime renders the bundle.
+//
 // Renders the `817:3` cover bundle through the PRODUCTION render path
-// (`BroadcastMode` = `AllowedHostsProvider` + `ShapeIndexProvider` + `<Tree>`)
-// into a fixed 1920×1080 stage, with NO WS server and NO mode crossfade — so a
-// Playwright screenshot is deterministic and settled. It is the headless render
-// arm of the round-trip:
+// (`renderBundleHeadless` → `BroadcastMode` = `AllowedHostsProvider` +
+// `ShapeIndexProvider` + `<Tree>`) into a fixed 1920×1080 stage, with NO WS
+// server and NO mode crossfade — so a Playwright screenshot is deterministic
+// and settled. It is the headless render arm of the round-trip:
 //
 //   817:3 (Figma) → mapper → LSML 1.2 (committed fixture) → compileBundle →
 //   RenderBundle → THIS render → screenshot → SSIM.
@@ -19,14 +26,14 @@
 // region the spec can assert on. The swatches are deterministic (fixed colour
 // table) → bit-stable screenshots.
 
-import { createRoot } from "react-dom/client";
-import { createElement, StrictMode } from "react";
-import { createStore } from "../../../src/state/store";
-import { BroadcastMode } from "../../../src/modes/broadcast";
-import { LumencastRuntimeProvider } from "../../../src/overlay/runtime-context";
+import { renderBundleHeadless } from "../../../src/index";
+import {
+  rewriteLayoutSrcs,
+  rewriteDefaultsSrcs,
+  type AssetTable,
+} from "../../../src/render/asset-resolve";
 import { compileBundle } from "../../../../compiler/src/index";
 import type { LSMLBundle } from "../../../../compiler/src/index";
-import { rewriteLayoutSrcs, rewriteDefaultsSrcs, type AssetTable } from "./asset-resolver";
 import fixture from "./fixtures/cover-817-3.lsml.json";
 
 // Deterministic 1×1 PNG data URIs, one solid colour per asset. A 1×1 image
@@ -105,38 +112,22 @@ function main(): void {
     onWarn: (m) => console.warn("[harness:compile]", m),
   });
 
-  const store = createStore();
-  store.reset(defaults);
-
   const target = document.getElementById("scene");
   if (!(target instanceof HTMLElement)) throw new Error("harness: #scene missing");
 
-  const root = createRoot(target);
-  root.render(
-    createElement(
-      StrictMode,
-      null,
-      createElement(
-        LumencastRuntimeProvider,
-        {
-          value: {
-            mode: "broadcast",
-            store,
-            bundle: compiled,
-            status: "live",
-            sendInput: () => {},
-          },
-        },
-        createElement(BroadcastMode),
-      ),
-    ),
-  );
+  // Render through the PUBLIC headless API (ADR 003 RC2): same production seam
+  // (LumencastRuntimeProvider{broadcast,live} > BroadcastMode), readiness via
+  // double rAF + document.fonts.ready. The harness no longer reaches into
+  // runtime internals — proving the export renders fidelity-faithfully.
+  const handle = renderBundleHeadless({
+    bundle: compiled,
+    target,
+    defaults,
+  });
 
-  // Signal readiness for the Playwright spec (after a frame so layout settles).
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      (window as unknown as { __harnessReady: boolean }).__harnessReady = true;
-    });
+  // Signal readiness for the Playwright spec once layout + fonts have settled.
+  void handle.ready.then(() => {
+    (window as unknown as { __harnessReady: boolean }).__harnessReady = true;
   });
 }
 

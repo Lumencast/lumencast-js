@@ -5,11 +5,7 @@
 // host), and renders it through the PRODUCTION BroadcastMode path into a fixed
 // 1920×1080 stage for a Playwright screenshot.
 
-import { createRoot } from "react-dom/client";
-import { createElement, StrictMode } from "react";
-import { createStore } from "../../../src/state/store";
-import { BroadcastMode } from "../../../src/modes/broadcast";
-import { LumencastRuntimeProvider } from "../../../src/overlay/runtime-context";
+import { renderBundleHeadless } from "../../../src/index";
 import { compileBundle } from "../../../../compiler/src/index";
 
 const REAL_BASE = "/tests/e2e/zero-loss/real/";
@@ -52,37 +48,13 @@ async function main(): Promise<void> {
     onWarn: (m: string) => console.warn("[real:compile]", m),
   });
 
-  const store = createStore();
-  store.reset(defaults);
-
   const target = document.getElementById("scene");
   if (!(target instanceof HTMLElement)) throw new Error("real harness: #scene missing");
 
-  const root = createRoot(target);
-  root.render(
-    createElement(
-      StrictMode,
-      null,
-      createElement(
-        LumencastRuntimeProvider,
-        {
-          value: {
-            mode: "broadcast",
-            store,
-            bundle: compiled,
-            status: "live",
-            sendInput: () => {},
-          },
-        },
-        createElement(BroadcastMode),
-      ),
-    ),
-  );
-
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      (window as unknown as { __harnessReady: boolean }).__harnessReady = true;
-    });
+  // Render through the public headless API (ADR 003) — same as the CI harness.
+  const handle = renderBundleHeadless({ bundle: compiled, target, defaults });
+  void handle.ready.then(() => {
+    (window as unknown as { __harnessReady: boolean }).__harnessReady = true;
   });
 }
 
