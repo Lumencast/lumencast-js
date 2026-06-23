@@ -1,6 +1,7 @@
 // Public types of @lumencast/runtime — must align with RUNTIME-API.md.
 
 import type { ErrorCode } from "@lumencast/protocol";
+import type { ResolveCaptureDevice } from "./render/primitives/capture";
 
 export type LumencastMode = "broadcast" | "control" | "test";
 
@@ -69,6 +70,15 @@ export interface MountOptions {
    *  logs — `broadcast` builds stay console-silent. When omitted, the
    *  runtime falls back to a DEV-only console.warn. */
   onDiagnostic?: (diagnostic: LumencastDiagnostic) => void;
+  /** ADR 004 §A1.3 — host resolver for the `x-zab.capture` primitive's ACQUIRE
+   *  mode. Given the LOGICAL `(deviceRef, sourceKind)` from the bundle, return
+   *  `{ deviceId }` to pin a physical device, or `null` for the host's default
+   *  device. The runtime passes `deviceId` only as a live `getUserMedia`
+   *  constraint — it NEVER enters the bundle or the content hash. Omit it and
+   *  ACQUIRE uses the default device ("the cam traverses"), never throwing.
+   *  Only consulted on a capture-capable host (e.g. the Electron preview
+   *  webview) ; ignored on-air (CEF/Pulsar render the placeholder). */
+  resolveCaptureDevice?: ResolveCaptureDevice;
 }
 
 export interface LumencastHandle {

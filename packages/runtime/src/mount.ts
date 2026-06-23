@@ -118,6 +118,11 @@ export function mount(options: MountOptions): LumencastHandle {
       statusSignal,
       crossfadeKeySignal,
       sendInput: (patches) => ws.sendInput(patches),
+      // ADR 004 §A1.3 — thread the host capture resolver to the runtime context
+      // so the `x-zab.capture` primitive's ACQUIRE mode can pin a device.
+      ...(options.resolveCaptureDevice !== undefined
+        ? { resolveCaptureDevice: options.resolveCaptureDevice }
+        : {}),
     }),
   );
 

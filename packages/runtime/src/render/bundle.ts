@@ -25,7 +25,11 @@ export type RenderKind =
   | "shape"
   | "media"
   | "repeat"
-  | "instance";
+  | "instance"
+  // Zab vendor primitive (RFC-0001, §17.1) — a transparent capture
+  // placeholder. Recognised by the Zab-plugin runtime ; reserves a box and
+  // renders nothing.
+  | "x-zab.capture";
 
 export interface RenderNode {
   kind: RenderKind;
@@ -139,6 +143,10 @@ export interface RenderBundle {
  */
 export const SUPPORTED_PROFILES: ReadonlySet<string> = new Set<string>([
   "x-lumencast.color-srgb-1.0",
+  // RFC-0001 / ADR 004 — this runtime ships the Zab capture plugin, so a
+  // bundle declaring `x-zab.capture/1` in `profiles[]` is compatible (it is
+  // NOT rejected as BUNDLE_INCOMPATIBLE, §17.3.1).
+  "x-zab.capture/1",
 ]);
 
 // LSML 1.1 §17.5.1 + ADR 001 RC#14 — authoring-profile detection.

@@ -64,7 +64,20 @@ export function KeyframePlayer({
   return (
     <motion.div
       key={replayTokenRef.current}
-      style={{ display: "contents" }}
+      // A `display:contents` element generates NO box, so the browser
+      // never composites the animated `transform`/`opacity`/`filter` this
+      // player writes — they are silently dropped and the subtree renders
+      // dead at its child's default origin (ADR 011 I7 live bug). The
+      // player must be a REAL compositing box. `position:absolute; inset:0`
+      // overlays the parent without disturbing sibling layout, and — being
+      // positioned — becomes the containing block for the absolutely-
+      // positioned primitive nested beneath it (Frame is `position:absolute;
+      // left:0; top:0`), so the child's authored `x`/`y` resolve against the
+      // player's (0,0) exactly as they did against the grandparent under
+      // `display:contents`. The animated channels now composite onto a live
+      // box and the whole subtree (the nested target's geometry + fill)
+      // moves and fades with the keyframes.
+      style={{ position: "absolute", inset: 0 }}
       initial={firstFrame(compiled.animate)}
       animate={compiled.animate}
       transition={transition}

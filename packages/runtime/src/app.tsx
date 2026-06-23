@@ -18,6 +18,7 @@ import type { Store } from "./state/store.js";
 import type { RenderBundle } from "./render/bundle.js";
 import type { ConnectionStatus } from "./transport/ws.js";
 import { LumencastRuntimeProvider } from "./overlay/runtime-context.js";
+import type { ResolveCaptureDevice } from "./render/primitives/capture.js";
 import type { LumencastMode } from "./types.js";
 
 const LazyBroadcastMode = lazy(() =>
@@ -35,6 +36,8 @@ export interface LumencastAppProps {
   statusSignal: Signal<ConnectionStatus>;
   crossfadeKeySignal: Signal<string>;
   sendInput: (patches: Patch[]) => void;
+  /** ADR 004 §A1.3 — host resolver for `x-zab.capture` ACQUIRE mode. */
+  resolveCaptureDevice?: ResolveCaptureDevice;
 }
 
 export function LumencastApp({
@@ -44,6 +47,7 @@ export function LumencastApp({
   statusSignal,
   crossfadeKeySignal,
   sendInput,
+  resolveCaptureDevice,
 }: LumencastAppProps) {
   useSignals();
 
@@ -72,6 +76,7 @@ export function LumencastApp({
             bundle,
             status,
             sendInput,
+            ...(resolveCaptureDevice !== undefined ? { resolveCaptureDevice } : {}),
           }}
         >
           <Suspense fallback={null}>

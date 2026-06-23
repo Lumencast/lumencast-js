@@ -99,6 +99,11 @@ export const PRIMITIVE_PROP_ALLOWLIST: Readonly<Record<RenderKind, ReadonlySet<s
   ]),
   media: allow(["src", "loop", "mute", "autoplay", "fit"]),
   instance: allow(["scene_id", "scene_version", "size", "position"]),
+  // RFC-0001 / ADR 004 — vendor capture placeholder. `width`/`height` are the
+  // flattened geometry (universal) ; the `x-zab.*` props are carried as
+  // metadata (the renderer reserves the box, ignores deviceRef). Listed so
+  // they are NOT flagged as silent drops by the anti-drop audit.
+  "x-zab.capture": allow(["x-zab.sourceKind", "x-zab.deviceRef", "width", "height"]),
   // `repeat` is dispatched specially by the tree ; its only consumed
   // binding is `items`.
   repeat: new Set(["items"]),

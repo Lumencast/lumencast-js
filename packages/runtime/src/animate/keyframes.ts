@@ -151,7 +151,14 @@ function pullTransform(
     if (prop === "rotate") {
       out.rotate = values.map((n) => `${n}deg`);
     } else {
-      out[prop] = values;
+      // ADR 011 I7 live-bug fix (2nd half): framer-motion animates transform
+      // through its shorthand motion keys `x`/`y`, NOT `translateX`/`translateY`
+      // — emitting the authored names verbatim left framer with unknown keys
+      // it silently dropped, so the box never translated at the antenna (only
+      // the opacity fade survived). Map the translate channels onto the framer
+      // keys. `scale`/`rotate` already match framer's vocabulary.
+      const framerKey = prop === "translateX" ? "x" : prop === "translateY" ? "y" : prop;
+      out[framerKey] = values;
     }
   }
 }

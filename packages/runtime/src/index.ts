@@ -26,6 +26,11 @@ export {
 } from "./render/diagnostics.js";
 export { PRIMITIVE_PROP_ALLOWLIST } from "./render/prop-allowlist.js";
 
+// ADR 004 §A1.3 — host resolver type for the `x-zab.capture` ACQUIRE mode,
+// supplied via `MountOptions.resolveCaptureDevice`. Exported so the consuming
+// app (Prism/Solar) types its injected resolver against the runtime's contract.
+export type { ResolveCaptureDevice } from "./render/primitives/capture.js";
+
 // Bundle types are useful for hosts that want to typecheck pre-compiled scenes.
 export type {
   RenderBundle,

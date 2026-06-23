@@ -191,7 +191,34 @@ const KIND_NODE_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   ]),
   media: new Set(["kind_hint", "controls", "autoplay", "muted", "loop", "size"]),
   instance: new Set(["scene_id", "scene_version", "size", "fit", "params", "bindParams"]),
+  // RFC-0001 / ADR 004 §3.1 — vendor primitive. The `x-zab.*` props are
+  // consumed (forwarded into the RenderNode), NOT dropped. `deviceRef` is
+  // metadata for the out-of-bundle resolver ; the runtime ignores it.
+  "x-zab.capture": new Set(["x-zab.sourceKind", "x-zab.deviceRef", "size"]),
 };
+
+/** RFC-0001 — `x-zab.sourceKind` enum. Visual kinds reserve a real box ;
+ *  audio-only kinds may render a zero-area inert node. */
+const CAPTURE_SOURCE_KINDS: ReadonlySet<string> = new Set([
+  "media.webcam",
+  "media.screen",
+  "media.window",
+  "media.app_audio",
+  "media.mic",
+]);
+
+/** RFC-0001 — visual `sourceKind`s, for which `size` is required. */
+const CAPTURE_VISUAL_KINDS: ReadonlySet<string> = new Set([
+  "media.webcam",
+  "media.screen",
+  "media.window",
+]);
+
+/** RFC-0001 — `x-zab.deviceRef` is a logical, hash-safe alias, never a
+ *  physical device_id. The pattern rejects a UUID, a `device:0` style id,
+ *  uppercase, leading digit, or anything over 64 chars. Anchored, no
+ *  backtracking (anti-ReDoS). */
+const CAPTURE_DEVICE_REF_RE = /^[a-z][a-z0-9-]{0,63}$/;
 
 /** Keys `mapTextStyle` consumes inside `text.style`. */
 const TEXT_STYLE_KEYS: ReadonlySet<string> = new Set([
@@ -430,6 +457,41 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
         }
       }
       break;
+
+    case "x-zab.capture": {
+      // RFC-0001 / ADR 004 §3.1 — transparent capture placeholder. Validate
+      // the vendor props HARD (an invalid value is a malformed directive, not
+      // a "spec'd field we don't lower yet" : throw, never warn) and forward
+      // them verbatim. Lumencast reserves the box ; it never resolves a device.
+      const sourceKind = node["x-zab.sourceKind"];
+      if (!CAPTURE_SOURCE_KINDS.has(sourceKind)) {
+        throw invalid(
+          node.id,
+          "x-zab.sourceKind",
+          "is not a recognised capture source kind (RFC-0001)",
+        );
+      }
+      const deviceRef = node["x-zab.deviceRef"];
+      if (typeof deviceRef !== "string" || !CAPTURE_DEVICE_REF_RE.test(deviceRef)) {
+        throw invalid(
+          node.id,
+          "x-zab.deviceRef",
+          "must be a logical alias matching ^[a-z][a-z0-9-]{0,63}$ — never a physical device_id (RFC-0001)",
+        );
+      }
+      // `size` is required for visual kinds, optional (zero-area box) for
+      // audio-only kinds.
+      if (node.size === undefined && CAPTURE_VISUAL_KINDS.has(sourceKind)) {
+        throw invalid(node.id, "size", "is required for a visual capture source kind (RFC-0001)");
+      }
+      props["x-zab.sourceKind"] = sourceKind;
+      props["x-zab.deviceRef"] = deviceRef;
+      if (node.size !== undefined) {
+        props["width"] = node.size.w;
+        props["height"] = node.size.h;
+      }
+      break;
+    }
   }
 
   // Universal props (LSML §5.4 — 1.1+). Forwarded to the renderer when

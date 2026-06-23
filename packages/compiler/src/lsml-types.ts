@@ -82,7 +82,18 @@ export type LSMLPrimitiveKind =
   | "shape"
   | "media"
   | "repeat"
-  | "instance";
+  | "instance"
+  // Zab vendor primitive (RFC-0001, §17.1). Additive, vendor-prefixed ; a
+  // transparent capture placeholder that acquires no stream.
+  | "x-zab.capture";
+
+/** RFC-0001 — the class of live capture a `x-zab.capture` box stands for. */
+export type LSMLCaptureSourceKind =
+  | "media.webcam"
+  | "media.screen"
+  | "media.window"
+  | "media.app_audio"
+  | "media.mic";
 
 export interface LSMLBindObject {
   /** Most primitives bind a `value` to a leaf path. */
@@ -386,6 +397,24 @@ export interface LSMLInstance extends LSMLBaseNode {
   bindParams?: Record<string, string>;
 }
 
+/** RFC-0001 — `x-zab.capture` : a transparent capture placeholder (Zab
+ *  vendor primitive, §17.1). Reserves a box and renders nothing ; carries a
+ *  `sourceKind` and a logical, hash-safe `deviceRef`. Acquires no stream —
+ *  physical device resolution lives entirely in the consuming app, never in
+ *  Lumencast. Vendor props keep their `x-zab.` prefix verbatim. */
+export interface LSMLCapture extends LSMLBaseNode {
+  kind: "x-zab.capture";
+  /** The class of live capture this box stands for. */
+  "x-zab.sourceKind": LSMLCaptureSourceKind;
+  /** A logical device alias (e.g. `primary-cam`). Matches
+   *  `^[a-z][a-z0-9-]{0,63}$` — NEVER a physical device_id / UUID. */
+  "x-zab.deviceRef": string;
+  /** Box geometry. Required for visual `sourceKind`s
+   *  (`media.webcam`/`media.screen`/`media.window`) ; audio-only kinds
+   *  (`media.app_audio`/`media.mic`) may omit it (zero-area box). */
+  size?: { w: number; h: number };
+}
+
 export type LSMLNode =
   | LSMLStack
   | LSMLGrid
@@ -395,7 +424,8 @@ export type LSMLNode =
   | LSMLShape
   | LSMLMedia
   | LSMLRepeat
-  | LSMLInstance;
+  | LSMLInstance
+  | LSMLCapture;
 
 export interface LSMLOperatorInput {
   path: string;
