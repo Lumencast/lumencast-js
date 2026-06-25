@@ -123,6 +123,17 @@ export function mount(options: MountOptions): LumencastHandle {
       ...(options.resolveCaptureDevice !== undefined
         ? { resolveCaptureDevice: options.resolveCaptureDevice }
         : {}),
+      // ADR 006 #4 — thread the host peer-stream resolver (supplied by the
+      // WebRTC viewer #3) so the `media` primitive's LIVE mode can render a
+      // peer's MediaStream in `srcObject`.
+      ...(options.resolvePeerStream !== undefined
+        ? { resolvePeerStream: options.resolvePeerStream }
+        : {}),
+      // ADR 006 #3 — reactive variant : the LIVE `media` node re-renders when a
+      // peer connects/leaves mid-show. `createPeerViewer()` supplies it.
+      ...(options.subscribePeerStream !== undefined
+        ? { subscribePeerStream: options.subscribePeerStream }
+        : {}),
     }),
   );
 

@@ -31,6 +31,41 @@ export { PRIMITIVE_PROP_ALLOWLIST } from "./render/prop-allowlist.js";
 // app (Prism/Solar) types its injected resolver against the runtime's contract.
 export type { ResolveCaptureDevice } from "./render/primitives/capture.js";
 
+// ADR 006 #4 — host resolver mapping a `peerLabel` to a peer's live MediaStream
+// (the `media` primitive's LIVE mode), supplied via `MountOptions.resolvePeerStream`.
+// Exported so the WebRTC viewer (#3) types its injected resolver against the
+// runtime's contract.
+export type { ResolvePeerStream, SubscribePeerStream } from "./render/primitives/media.js";
+
+// ADR 006 #3 — WebRTC viewer (mesh, viewer role) + peer-stream registry. The
+// #3↔#4 bridge : a viewer joins Meet room(s), receives N peers and returns the
+// `resolvePeerStream` / `subscribePeerStream` the `media`/`meet.peer` LIVE render
+// consumes via `MountOptions`. The viewer never publishes (no getUserMedia) ; it
+// owns the peer connections + the track lifecycle.
+//
+// FINAL MODEL : `createMultiRoomPeerViewer({ rooms: [...] })` joins EVERY room
+// and aggregates all peers into ONE registry (first-connected-wins on a label
+// collision). `createPeerViewerFromInjection` normalises the host-injected
+// `window.__ZAB_PEER_VIEWER__` (multi-room `{rooms}` OR legacy single-room).
+export {
+  createPeerViewer,
+  createMultiRoomPeerViewer,
+  createPeerViewerFromInjection,
+  MeetViewer,
+  createPeerStreamRegistry,
+  type PeerViewer,
+  type MultiRoomPeerViewer,
+  type MultiRoomPeerViewerOptions,
+  type RoomOptions,
+  type PeerViewerInjection,
+  type MeetViewerOptions,
+  type MeetViewerDeps,
+  type PeerInfo,
+  type RemoteTrackEvent,
+  type PeerStreamRegistry,
+  type PeerStreamListener,
+} from "./webrtc/index.js";
+
 // Bundle types are useful for hosts that want to typecheck pre-compiled scenes.
 export type {
   RenderBundle,

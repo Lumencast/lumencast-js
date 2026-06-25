@@ -97,7 +97,27 @@ export const PRIMITIVE_PROP_ALLOWLIST: Readonly<Record<RenderKind, ReadonlySet<s
     "paths",
     "ariaLabel",
   ]),
-  media: allow(["src", "loop", "mute", "autoplay", "fit"]),
+  // `peerLabel` (ADR 006 #4) selects the live MediaStream mode : a node whose
+  // source is a `meet.peer.peer_label` is rendered in `srcObject` from a host
+  // resolver instead of `<video src>`. Listed so it is NOT flagged as a silent
+  // drop by the anti-drop audit when a scene carries a live source.
+  media: allow(["src", "peerLabel", "loop", "mute", "autoplay", "fit"]),
+  // ADR 006 §3.3/§3.5 — the unified source kind. `peer_label` is the stream
+  // reference (resolved to a MediaStream → srcObject) ; `object_fit`/`muted`
+  // drive the video ; `x-zab.sourceKind` is advisory ; `metadata` carries the
+  // editor round-trip (figma). Geometry is universal as flat `x/y/width/height`,
+  // but an UNCOMPILED from-scene node carries the NESTED `position`/`size` shape
+  // (the Tree flattens it as a fallback) — listed so neither form is flagged as
+  // a silent drop by the anti-drop audit.
+  "meet.peer": allow([
+    "peer_label",
+    "object_fit",
+    "muted",
+    "x-zab.sourceKind",
+    "metadata",
+    "position",
+    "size",
+  ]),
   instance: allow(["scene_id", "scene_version", "size", "position"]),
   // RFC-0001 / ADR 004 — vendor capture placeholder. `width`/`height` are the
   // flattened geometry (universal) ; the `x-zab.*` props are carried as
