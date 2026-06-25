@@ -26,6 +26,10 @@ export type RenderKind =
   | "media"
   | "repeat"
   | "instance"
+  // ADR 006 §3.3/§3.5 — the unified source kind. Every source crossing the
+  // Prism export arrives as a `meet.peer` node ; the runtime resolves its
+  // `peer_label → MediaStream` (WebRTC viewer) and renders it in `srcObject`.
+  | "meet.peer"
   // Zab vendor primitive (RFC-0001, §17.1) — a transparent capture
   // placeholder. Recognised by the Zab-plugin runtime ; reserves a box and
   // renders nothing.

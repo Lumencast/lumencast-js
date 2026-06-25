@@ -12,6 +12,7 @@ import { Text } from "./text";
 import { Image } from "./image";
 import { Shape } from "./shape";
 import { Media } from "./media";
+import { MeetPeer } from "./meet-peer";
 import { Instance } from "./instance";
 import { Capture } from "./capture";
 // `repeat` is dispatched specially in the tree (it iterates a bound
@@ -48,6 +49,9 @@ export const PRIMITIVES: Partial<Record<RenderKind, ComponentType<PrimitiveProps
   image: Image,
   shape: Shape,
   media: Media,
+  // ADR 006 §3.3/§3.5 — the unified source kind : every exported source is a
+  // `meet.peer` node rendered in `<video srcObject>` from the WebRTC viewer.
+  "meet.peer": MeetPeer,
   instance: Instance,
   // RFC-0001 / ADR 004 — Zab vendor capture placeholder (transparent, inert).
   "x-zab.capture": Capture,

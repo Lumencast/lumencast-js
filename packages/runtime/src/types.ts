@@ -2,6 +2,7 @@
 
 import type { ErrorCode } from "@lumencast/protocol";
 import type { ResolveCaptureDevice } from "./render/primitives/capture";
+import type { ResolvePeerStream, SubscribePeerStream } from "./render/primitives/media";
 
 export type LumencastMode = "broadcast" | "control" | "test";
 
@@ -79,6 +80,18 @@ export interface MountOptions {
    *  Only consulted on a capture-capable host (e.g. the Electron preview
    *  webview) ; ignored on-air (CEF/Pulsar render the placeholder). */
   resolveCaptureDevice?: ResolveCaptureDevice;
+  /** ADR 006 #4 — host resolver for the `media` primitive's LIVE mode. Given a
+   *  LOGICAL `peerLabel` (a `meet.peer.peer_label` from the scene), return the
+   *  live `MediaStream` of that peer, or `null` when it is not connected yet.
+   *  Supplied by the WebRTC viewer (issue #3) ; the stream is rendered in
+   *  `<video>.srcObject` and NEVER enters the bundle or the content hash. Omit
+   *  it and a live `media` node renders a stream-less box, never throwing. */
+  resolvePeerStream?: ResolvePeerStream;
+  /** ADR 006 #3 — reactive variant of `resolvePeerStream` : the viewer pushes a
+   *  peer's stream on connect and `null` on leave, so a LIVE `media` node
+   *  re-renders when its peer joins mid-show. `createPeerViewer()` returns one.
+   *  Preferred over `resolvePeerStream` when both are supplied. */
+  subscribePeerStream?: SubscribePeerStream;
 }
 
 export interface LumencastHandle {

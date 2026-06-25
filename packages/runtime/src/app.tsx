@@ -19,6 +19,7 @@ import type { RenderBundle } from "./render/bundle.js";
 import type { ConnectionStatus } from "./transport/ws.js";
 import { LumencastRuntimeProvider } from "./overlay/runtime-context.js";
 import type { ResolveCaptureDevice } from "./render/primitives/capture.js";
+import type { ResolvePeerStream, SubscribePeerStream } from "./render/primitives/media.js";
 import type { LumencastMode } from "./types.js";
 
 const LazyBroadcastMode = lazy(() =>
@@ -38,6 +39,10 @@ export interface LumencastAppProps {
   sendInput: (patches: Patch[]) => void;
   /** ADR 004 §A1.3 — host resolver for `x-zab.capture` ACQUIRE mode. */
   resolveCaptureDevice?: ResolveCaptureDevice;
+  /** ADR 006 #4 — host resolver for the `media` primitive's LIVE mode. */
+  resolvePeerStream?: ResolvePeerStream;
+  /** ADR 006 #3 — reactive peer-stream channel (preferred over the resolver). */
+  subscribePeerStream?: SubscribePeerStream;
 }
 
 export function LumencastApp({
@@ -48,6 +53,8 @@ export function LumencastApp({
   crossfadeKeySignal,
   sendInput,
   resolveCaptureDevice,
+  resolvePeerStream,
+  subscribePeerStream,
 }: LumencastAppProps) {
   useSignals();
 
@@ -77,6 +84,8 @@ export function LumencastApp({
             status,
             sendInput,
             ...(resolveCaptureDevice !== undefined ? { resolveCaptureDevice } : {}),
+            ...(resolvePeerStream !== undefined ? { resolvePeerStream } : {}),
+            ...(subscribePeerStream !== undefined ? { subscribePeerStream } : {}),
           }}
         >
           <Suspense fallback={null}>

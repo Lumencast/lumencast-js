@@ -326,20 +326,47 @@ function finite(v: unknown): number | undefined {
  *  the compiler-flattened `resolved.x`/`resolved.y`. BOTH axes must be
  *  finite numbers : a partial or malformed pair yields `undefined` (the
  *  node stays in the normal flow — RC#3 mistyped-position is inert, not
- *  injected). Values are plain numbers, never untrusted strings. */
+ *  injected). Values are plain numbers, never untrusted strings.
+ *
+ *  ADR 006 §3.3 — a `meet.peer` node produced DIRECTLY by the Prism from-scene
+ *  export bypasses `@lumencast/compiler`, so its geometry arrives in the NESTED
+ *  LSML shape (`position:{x,y}`) rather than flattened `x`/`y`. We accept that
+ *  nested form as a fallback ONLY when the flat form is absent. This is purely
+ *  additive : every compiled bundle always carries flat `x`/`y` (which win), so
+ *  no existing node's placement changes. */
 function extractPosition(resolved: Record<string, unknown>): { x: number; y: number } | undefined {
-  const x = finite(resolved.x);
-  const y = finite(resolved.y);
+  let x = finite(resolved.x);
+  let y = finite(resolved.y);
+  if (x === undefined && y === undefined) {
+    const nested = resolved.position as { x?: unknown; y?: unknown } | undefined;
+    if (nested && typeof nested === "object") {
+      x = finite(nested.x);
+      y = finite(nested.y);
+    }
+  }
   if (x === undefined || y === undefined) return undefined;
   return { x, y };
 }
 
 /** ADR 002 §3.1 (D1) — the absolute box size from `resolved.width`/
  *  `resolved.height`. Only meaningful alongside `position` (the wrapper
- *  ignores it otherwise). Partial sizes are allowed (one axis hugs). */
+ *  ignores it otherwise). Partial sizes are allowed (one axis hugs).
+ *
+ *  ADR 006 §3.3 — like `extractPosition`, accept the NESTED `size:{w,h}` shape
+ *  as a fallback for an uncompiled `meet.peer` node (flat `width`/`height`
+ *  always win when present, so compiled bundles are unaffected). Without this,
+ *  the `meet.peer` wrapper got a position but NO size → the `<video>` filled a
+ *  collapsed box instead of the authored geometry (the observed RC-Geo bug). */
 function extractSize(resolved: Record<string, unknown>): { w?: number; h?: number } | undefined {
-  const w = finite(resolved.width);
-  const h = finite(resolved.height);
+  let w = finite(resolved.width);
+  let h = finite(resolved.height);
+  if (w === undefined && h === undefined) {
+    const nested = resolved.size as { w?: unknown; h?: unknown } | undefined;
+    if (nested && typeof nested === "object") {
+      w = finite(nested.w);
+      h = finite(nested.h);
+    }
+  }
   if (w === undefined && h === undefined) return undefined;
   return { w, h };
 }
@@ -353,8 +380,13 @@ function childIsAbsolute(child: RenderNode): boolean {
   if (child.kind === "frame") return false; // a frame positions itself
   const props = child.props ?? {};
   const bindings = child.bindings ?? {};
-  const hasX = finite(props.x) !== undefined || "x" in bindings;
-  const hasY = finite(props.y) !== undefined || "y" in bindings;
+  // ADR 006 §3.3 — also recognise the nested `position:{x,y}` shape (an
+  // uncompiled `meet.peer` node), mirroring extractPosition's fallback.
+  const nested = props.position as { x?: unknown; y?: unknown } | undefined;
+  const hasX =
+    finite(props.x) !== undefined || "x" in bindings || (nested ? finite(nested.x) !== undefined : false);
+  const hasY =
+    finite(props.y) !== undefined || "y" in bindings || (nested ? finite(nested.y) !== undefined : false);
   return hasX && hasY;
 }
 
