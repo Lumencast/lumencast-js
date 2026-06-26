@@ -135,7 +135,7 @@ export function Capture({ resolved }: PrimitiveProps) {
 export type ResolveCaptureDevice = (
   deviceRef: string,
   sourceKind: string,
-) => { deviceId?: string } | null;
+) => { deviceId?: string; captureSourceId?: string } | null;
 
 /** §A1.2(2) — capture-capable iff `navigator.mediaDevices.getUserMedia`
  *  exists and is callable in the current context. Feature detection only ;
@@ -180,10 +180,24 @@ async function acquireStream(
     case "media.app_audio":
       return md.getUserMedia({ audio: deviceConstraint(deviceId) });
     case "media.screen":
-    case "media.window":
-      // Display capture has no deviceId constraint (the picker selects the
-      // surface). The resolver is consulted but its id is not applicable here.
+    case "media.window": {
+      // DIRECT capture of the picked desktopCapturer surface (no system picker)
+      // via Electron's legacy `chromeMediaSource:desktop` + the resolved
+      // `captureSourceId`. Falls back to `getDisplayMedia` (system picker) when
+      // no surface id was resolved (e.g. a non-Electron host).
+      const captureSourceId = resolved?.captureSourceId;
+      if (typeof captureSourceId === "string" && captureSourceId.length > 0) {
+        return md.getUserMedia({
+          video: {
+            mandatory: {
+              chromeMediaSource: "desktop",
+              chromeMediaSourceId: captureSourceId,
+            },
+          } as unknown as MediaTrackConstraints,
+        });
+      }
       return md.getDisplayMedia({ video: true });
+    }
     default:
       return null;
   }
