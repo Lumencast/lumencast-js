@@ -129,13 +129,25 @@ export function Capture({ resolved }: PrimitiveProps) {
   );
 }
 
+/** A resolved physical device for a live capture constraint, or `null` when the
+ *  host could not bind the logical `deviceRef`. */
+export type ResolvedCaptureDevice = {
+  deviceId?: string;
+  captureSourceId?: string;
+} | null;
+
 /** Resolver injected by the consuming app (ADR 004 §A1.3). Maps the LOGICAL
- *  `deviceRef` to a physical `deviceId` for a live `getUserMedia` constraint.
- *  The result NEVER enters the bundle or the content hash. */
+ *  `deviceRef` to a physical `deviceId`/`captureSourceId` for a live
+ *  `getUserMedia` constraint. The result NEVER enters the bundle or the content
+ *  hash. MAY be async: physical ids (e.g. getUserMedia `deviceId`) are salted
+ *  per origin/partition, so the host often must re-resolve a portable key
+ *  (label) against THIS context's devices — an inherently asynchronous step
+ *  (`enumerateDevices`). `acquireStream` awaits it, so the device is bound
+ *  before acquisition rather than racing a late global mutation. */
 export type ResolveCaptureDevice = (
   deviceRef: string,
   sourceKind: string,
-) => { deviceId?: string; captureSourceId?: string } | null;
+) => ResolvedCaptureDevice | Promise<ResolvedCaptureDevice>;
 
 /** §A1.2(2) — capture-capable iff `navigator.mediaDevices.getUserMedia`
  *  exists and is callable in the current context. Feature detection only ;
@@ -166,25 +178,35 @@ async function acquireStream(
 ): Promise<MediaStream | null> {
   const md = navigator.mediaDevices;
 
-  // §A1.3 — a resolver maps the LOGICAL deviceRef to a physical deviceId. No
-  // resolver / `null` result → default constraints (no deviceId), so "the cam
-  // traverses" on the first pass. The deviceId is a live constraint only.
-  const resolved = resolveCaptureDevice?.(deviceRef, sourceKind) ?? null;
+  // §A1.3 (amended 2026-06-27) — AWAIT the resolver: physical ids are salted
+  // per origin/partition, so the host may need an async re-resolution by a
+  // portable key (label) in THIS context. Awaiting binds the device before
+  // acquisition instead of racing a late global update (the previous sync call
+  // let the node acquire with a stale/absent id first).
+  const resolved = (await resolveCaptureDevice?.(deviceRef, sourceKind)) ?? null;
   const deviceId = resolved?.deviceId;
+  const declaredRef = deviceRef.length > 0;
 
   switch (sourceKind) {
     case "media.webcam":
-      return md.getUserMedia({ video: deviceConstraint(deviceId) });
     case "media.mic":
-      return md.getUserMedia({ audio: deviceConstraint(deviceId) });
-    case "media.app_audio":
-      return md.getUserMedia({ audio: deviceConstraint(deviceId) });
+    case "media.app_audio": {
+      // §A1.3 (amended) — NO default-device fallback for a DECLARED deviceRef
+      // that did not resolve to a real device. Acquiring the host default cam
+      // here is the silent "automatic allocation" of the WRONG camera the
+      // consuming app must never get. → PLACEHOLDER (return null). The bare
+      // default constraint stays ONLY when no deviceRef is declared at all.
+      if (declaredRef && (typeof deviceId !== "string" || deviceId.length === 0)) {
+        return null;
+      }
+      const channel = sourceKind === "media.webcam" ? "video" : "audio";
+      return md.getUserMedia({ [channel]: deviceConstraint(deviceId) });
+    }
     case "media.screen":
     case "media.window": {
       // DIRECT capture of the picked desktopCapturer surface (no system picker)
       // via Electron's legacy `chromeMediaSource:desktop` + the resolved
-      // `captureSourceId`. Falls back to `getDisplayMedia` (system picker) when
-      // no surface id was resolved (e.g. a non-Electron host).
+      // `captureSourceId`.
       const captureSourceId = resolved?.captureSourceId;
       if (typeof captureSourceId === "string" && captureSourceId.length > 0) {
         return md.getUserMedia({
@@ -196,6 +218,10 @@ async function acquireStream(
           } as unknown as MediaTrackConstraints,
         });
       }
+      // A declared surface ref that didn't resolve → PLACEHOLDER, never a
+      // default `getDisplayMedia` picker. The picker stays only when no ref is
+      // declared (a bare capture node on a non-Electron host).
+      if (declaredRef) return null;
       return md.getDisplayMedia({ video: true });
     }
     default:
@@ -203,10 +229,18 @@ async function acquireStream(
   }
 }
 
-/** A `getUserMedia` track constraint : a specific `deviceId` when resolved,
- *  else `true` (the host's default device). */
+/** A `getUserMedia` track constraint. A resolved deviceId is pinned with
+ *  `exact`, NOT a bare (ideal) deviceId: an *ideal* constraint SILENTLY falls
+ *  back to the host default camera when the requested device can't start (e.g.
+ *  an INACTIVE virtual cam that's enumerated but produces no stream) — the
+ *  "automatic allocation" of the WRONG camera. `exact` yields the requested
+ *  device (its placeholder frame if idle), or an OverconstrainedError the
+ *  caller catches into PLACEHOLDER — never the wrong cam. No deviceId → `true`
+ *  (host default) applies ONLY when no deviceRef was declared. */
 function deviceConstraint(deviceId: string | undefined): MediaTrackConstraints | boolean {
-  return typeof deviceId === "string" && deviceId.length > 0 ? { deviceId } : true;
+  return typeof deviceId === "string" && deviceId.length > 0
+    ? { deviceId: { exact: deviceId } }
+    : true;
 }
 
 /** Stop every track of a stream (RC11 — release the camera/mic, kill the

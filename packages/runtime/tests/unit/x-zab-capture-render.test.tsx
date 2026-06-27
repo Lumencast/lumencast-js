@@ -212,17 +212,23 @@ describe("x-zab.capture — RC8 : ACQUIRE on a capable host", () => {
   it("calls getUserMedia once and mounts a <video> for a visual kind", async () => {
     const { stream } = fakeStream();
     const getUserMedia = vi.fn().mockResolvedValue(stream);
+    // A declared deviceRef MUST be backed by a resolver that returns a real deviceId;
+    // otherwise the no-default-on-declared-ref rule (RC9) sends it to PLACEHOLDER.
+    const resolveCaptureDevice = vi.fn().mockReturnValue({ deviceId: "phys-cam" });
     await withMediaDevices({ getUserMedia } as never, async () => {
-      await renderWithRuntime({
-        kind: "x-zab.capture",
-        id: "cam",
-        props: {
-          "x-zab.sourceKind": "media.webcam",
-          "x-zab.deviceRef": "primary-cam",
-          width: 640,
-          height: 360,
+      await renderWithRuntime(
+        {
+          kind: "x-zab.capture",
+          id: "cam",
+          props: {
+            "x-zab.sourceKind": "media.webcam",
+            "x-zab.deviceRef": "primary-cam",
+            width: 640,
+            height: 360,
+          },
         },
-      });
+        resolveCaptureDevice,
+      );
       // Let the async acquisition + state update flush.
       await act(async () => {
         await Promise.resolve();
@@ -236,15 +242,17 @@ describe("x-zab.capture — RC8 : ACQUIRE on a capable host", () => {
     });
   });
 
-  it("uses getDisplayMedia for media.screen", async () => {
+  it("uses getDisplayMedia for media.screen when no deviceRef is declared", async () => {
     const { stream } = fakeStream();
     const getUserMedia = vi.fn();
     const getDisplayMedia = vi.fn().mockResolvedValue(stream);
     await withMediaDevices({ getUserMedia, getDisplayMedia } as never, async () => {
+      // Empty deviceRef → declaredRef=false → falls through to getDisplayMedia({video:true}).
+      // A non-empty deviceRef without a resolver that returns captureSourceId would be PLACEHOLDER.
       await renderWithRuntime({
         kind: "x-zab.capture",
         id: "scr",
-        props: { "x-zab.sourceKind": "media.screen", "x-zab.deviceRef": "main-display", width: 100, height: 100 },
+        props: { "x-zab.sourceKind": "media.screen", "x-zab.deviceRef": "", width: 100, height: 100 },
       });
       await act(async () => {
         await Promise.resolve();
@@ -259,10 +267,11 @@ describe("x-zab.capture — RC8 : ACQUIRE on a capable host", () => {
     const { stream } = fakeStream();
     const getUserMedia = vi.fn().mockResolvedValue(stream);
     await withMediaDevices({ getUserMedia } as never, async () => {
+      // Empty deviceRef → declaredRef=false → getUserMedia({audio:true}) (host default).
       await renderWithRuntime({
         kind: "x-zab.capture",
         id: "mic",
-        props: { "x-zab.sourceKind": "media.mic", "x-zab.deviceRef": "main-mic" },
+        props: { "x-zab.sourceKind": "media.mic", "x-zab.deviceRef": "" },
       });
       await act(async () => {
         await Promise.resolve();
@@ -276,12 +285,17 @@ describe("x-zab.capture — RC8 : ACQUIRE on a capable host", () => {
 
   it("falls back to PLACEHOLDER without throwing when acquisition fails", async () => {
     const getUserMedia = vi.fn().mockRejectedValue(new Error("permission denied"));
+    // Resolver must return a valid deviceId so getUserMedia IS reached before failing.
+    const resolveCaptureDevice = vi.fn().mockReturnValue({ deviceId: "phys-cam" });
     await withMediaDevices({ getUserMedia } as never, async () => {
-      await renderWithRuntime({
-        kind: "x-zab.capture",
-        id: "cam",
-        props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "primary-cam", width: 640, height: 360 },
-      });
+      await renderWithRuntime(
+        {
+          kind: "x-zab.capture",
+          id: "cam",
+          props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "primary-cam", width: 640, height: 360 },
+        },
+        resolveCaptureDevice,
+      );
       await act(async () => {
         await Promise.resolve();
         await Promise.resolve();
@@ -298,7 +312,7 @@ describe("x-zab.capture — RC8 : ACQUIRE on a capable host", () => {
 });
 
 describe("x-zab.capture — RC9 : host device resolver", () => {
-  it("calls the resolver with the logical deviceRef and pins the deviceId", async () => {
+  it("calls the resolver with the logical deviceRef and pins the deviceId with exact constraint", async () => {
     const { stream } = fakeStream();
     const getUserMedia = vi.fn().mockResolvedValue(stream);
     const resolveCaptureDevice = vi.fn().mockReturnValue({ deviceId: "phys-123" });
@@ -315,18 +329,23 @@ describe("x-zab.capture — RC9 : host device resolver", () => {
         await Promise.resolve();
       });
       expect(resolveCaptureDevice).toHaveBeenCalledWith("primary-cam", "media.webcam");
-      expect(getUserMedia).toHaveBeenCalledWith({ video: { deviceId: "phys-123" } });
+      // Resolved deviceId is pinned with `exact`, NOT an ideal constraint — prevents
+      // silent fallback to the wrong camera when the requested device is inactive.
+      expect(getUserMedia).toHaveBeenCalledWith({ video: { deviceId: { exact: "phys-123" } } });
     });
   });
 
-  it("with no resolver, getUserMedia uses default constraints (no deviceId), no throw", async () => {
+  it("with no resolver and no declared deviceRef, getUserMedia uses default constraints (no deviceId), no throw", async () => {
     const { stream } = fakeStream();
     const getUserMedia = vi.fn().mockResolvedValue(stream);
     await withMediaDevices({ getUserMedia } as never, async () => {
+      // Empty deviceRef → declaredRef=false → no-default-on-declared-ref rule does NOT
+      // apply → getUserMedia({video:true}) (host default). This is the only path where
+      // the bare default constraint survives under the new contract.
       await renderWithRuntime({
         kind: "x-zab.capture",
         id: "cam",
-        props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "primary-cam", width: 640, height: 360 },
+        props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "", width: 640, height: 360 },
       });
       await act(async () => {
         await Promise.resolve();
@@ -336,9 +355,12 @@ describe("x-zab.capture — RC9 : host device resolver", () => {
     });
   });
 
-  it("a resolver returning null falls back to default constraints", async () => {
-    const { stream } = fakeStream();
-    const getUserMedia = vi.fn().mockResolvedValue(stream);
+  it("a resolver returning null with a declared deviceRef yields PLACEHOLDER (no getUserMedia)", async () => {
+    // §A1.3 (amended) — no-default-on-declared-ref: if deviceRef is declared but the
+    // resolver cannot bind it to a real deviceId, acquireStream returns null → PLACEHOLDER.
+    // getUserMedia MUST NOT be called — the old "fall back to default cam" silent
+    // allocation is the exact bug this rule closes.
+    const getUserMedia = vi.fn();
     const resolveCaptureDevice = vi.fn().mockReturnValue(null);
     await withMediaDevices({ getUserMedia } as never, async () => {
       await renderWithRuntime(
@@ -352,7 +374,11 @@ describe("x-zab.capture — RC9 : host device resolver", () => {
       await act(async () => {
         await Promise.resolve();
       });
-      expect(getUserMedia).toHaveBeenCalledWith({ video: true });
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(container.querySelector("video")).toBeNull();
+      const box = container.querySelector("[data-lumencast-capture]") as HTMLElement | null;
+      expect(box).not.toBeNull();
+      expect(box!.style.opacity).toBe("0");
     });
   });
 });
@@ -361,12 +387,18 @@ describe("x-zab.capture — RC11 : tracks stopped at unmount", () => {
   it("stops every MediaStream track when the node unmounts", async () => {
     const { stream, stop } = fakeStream();
     const getUserMedia = vi.fn().mockResolvedValue(stream);
+    // A resolver returning a real deviceId is required: without one a declared
+    // deviceRef triggers PLACEHOLDER (no stream acquired, nothing to stop).
+    const resolveCaptureDevice = vi.fn().mockReturnValue({ deviceId: "phys-cam" });
     await withMediaDevices({ getUserMedia } as never, async () => {
-      await renderWithRuntime({
-        kind: "x-zab.capture",
-        id: "cam",
-        props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "primary-cam", width: 640, height: 360 },
-      });
+      await renderWithRuntime(
+        {
+          kind: "x-zab.capture",
+          id: "cam",
+          props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "primary-cam", width: 640, height: 360 },
+        },
+        resolveCaptureDevice,
+      );
       await act(async () => {
         await Promise.resolve();
       });
