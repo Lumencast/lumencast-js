@@ -41,7 +41,10 @@ export interface PeerInfo {
 }
 
 export type SignalPayload =
-  | { kind: "sdp"; description: { type: "offer" | "answer" | "pranswer" | "rollback"; sdp: string } }
+  | {
+      kind: "sdp";
+      description: { type: "offer" | "answer" | "pranswer" | "rollback"; sdp: string };
+    }
   | {
       kind: "ice";
       candidate: {
@@ -453,8 +456,11 @@ export class MeetViewer {
  *  fakes), this is a silent no-op and the transceiver keeps Chromium's default
  *  full list — behaviour is never WORSE than before the fix. */
 function pinViewerCodecs(audioTx: unknown, videoTx: unknown): void {
-  const getCaps = (globalThis as { RTCRtpReceiver?: { getCapabilities?: (k: string) => RTCRtpCapabilities | null } })
-    .RTCRtpReceiver?.getCapabilities;
+  const getCaps = (
+    globalThis as {
+      RTCRtpReceiver?: { getCapabilities?: (k: string) => RTCRtpCapabilities | null };
+    }
+  ).RTCRtpReceiver?.getCapabilities;
   if (typeof getCaps !== "function") return;
 
   pinKind(videoTx, getCaps("video"), (mime) => {

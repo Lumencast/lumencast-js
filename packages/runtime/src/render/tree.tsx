@@ -384,9 +384,13 @@ function childIsAbsolute(child: RenderNode): boolean {
   // uncompiled `meet.peer` node), mirroring extractPosition's fallback.
   const nested = props.position as { x?: unknown; y?: unknown } | undefined;
   const hasX =
-    finite(props.x) !== undefined || "x" in bindings || (nested ? finite(nested.x) !== undefined : false);
+    finite(props.x) !== undefined ||
+    "x" in bindings ||
+    (nested ? finite(nested.x) !== undefined : false);
   const hasY =
-    finite(props.y) !== undefined || "y" in bindings || (nested ? finite(nested.y) !== undefined : false);
+    finite(props.y) !== undefined ||
+    "y" in bindings ||
+    (nested ? finite(nested.y) !== undefined : false);
   return hasX && hasY;
 }
 

@@ -36,12 +36,12 @@ import { useOptionalLumencastRuntime } from "../../overlay/runtime-context";
 export function Capture({ resolved }: PrimitiveProps) {
   const width = dimOr(resolved.width, "100%");
   const height = dimOr(resolved.height, "100%");
-  const sourceKind = typeof resolved["x-zab.sourceKind"] === "string"
-    ? (resolved["x-zab.sourceKind"] as string)
-    : "";
-  const deviceRef = typeof resolved["x-zab.deviceRef"] === "string"
-    ? (resolved["x-zab.deviceRef"] as string)
-    : "";
+  const sourceKind =
+    typeof resolved["x-zab.sourceKind"] === "string"
+      ? (resolved["x-zab.sourceKind"] as string)
+      : "";
+  const deviceRef =
+    typeof resolved["x-zab.deviceRef"] === "string" ? (resolved["x-zab.deviceRef"] as string) : "";
 
   // §A1.3 — the host-provided resolver, injected at mount through the runtime
   // context (NOT the bundle, NOT the LSDP wire). Absent when the tree renders
@@ -154,17 +154,14 @@ export type ResolveCaptureDevice = (
  *  CEF/Pulsar on-air and jsdom (without a mock) report non-capable. */
 function isCaptureCapable(): boolean {
   return (
-    typeof navigator !== "undefined" &&
-    typeof navigator.mediaDevices?.getUserMedia === "function"
+    typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getUserMedia === "function"
   );
 }
 
 /** Visual kinds render a `<video>` ; audio kinds stay visually empty. */
 function isVisualKind(sourceKind: string): boolean {
   return (
-    sourceKind === "media.webcam" ||
-    sourceKind === "media.screen" ||
-    sourceKind === "media.window"
+    sourceKind === "media.webcam" || sourceKind === "media.screen" || sourceKind === "media.window"
   );
 }
 
