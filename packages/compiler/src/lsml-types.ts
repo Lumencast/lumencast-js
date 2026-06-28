@@ -85,7 +85,13 @@ export type LSMLPrimitiveKind =
   | "instance"
   // Zab vendor primitive (RFC-0001, §17.1). Additive, vendor-prefixed ; a
   // transparent capture placeholder that acquires no stream.
-  | "x-zab.capture";
+  | "x-zab.capture"
+  // Zab vendor primitive (ADR Blue 009 §3.1, Amendment 2). Additive,
+  // vendor-prefixed ; a transparent slot placeholder that declares which
+  // logical slot of the scene receives a meet peer. Carries NO cam/peer
+  // identity — the slotRef→peer_label binding is stream-level ZabCam state,
+  // resolved at runtime. Cam-agnostic by construction.
+  | "x-zab.meet-peer";
 
 /** RFC-0001 — the class of live capture a `x-zab.capture` box stands for. */
 export type LSMLCaptureSourceKind =
@@ -415,6 +421,25 @@ export interface LSMLCapture extends LSMLBaseNode {
   size?: { w: number; h: number };
 }
 
+/** ADR Blue 009 §3.1 (Amendment 2) — `x-zab.meet-peer` : a transparent
+ *  meet-peer SLOT placeholder (Zab vendor primitive, §17.1). Reserves a box
+ *  and renders nothing until the slot is bound. Carries ONLY a logical,
+ *  hash-safe `slotRef` (which slot of the scene receives a meet peer) and
+ *  geometry — NEVER a cam/peer identity. The `slotRef → peer_label` binding
+ *  is stream-level ZabCam state (table `slot_assignments`), resolved entirely
+ *  at runtime ; Lumencast resolves no peer and the scene stays cam-agnostic.
+ *  Vendor props keep their `x-zab.` prefix verbatim. */
+export interface LSMLMeetPeer extends LSMLBaseNode {
+  kind: "x-zab.meet-peer";
+  /** A logical slot alias (e.g. `cam-caster-1`). Matches
+   *  `^[a-z][a-z0-9-]{0,63}$` — NEVER a volatile peerId / room id. In the
+   *  hash (structural slot identity). */
+  "x-zab.slotRef": string;
+  /** Box geometry. Required — a meet-peer slot is always a visual box that
+   *  renders a transparent placeholder until bound. */
+  size: { w: number; h: number };
+}
+
 export type LSMLNode =
   | LSMLStack
   | LSMLGrid
@@ -425,7 +450,8 @@ export type LSMLNode =
   | LSMLMedia
   | LSMLRepeat
   | LSMLInstance
-  | LSMLCapture;
+  | LSMLCapture
+  | LSMLMeetPeer;
 
 export interface LSMLOperatorInput {
   path: string;

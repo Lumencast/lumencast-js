@@ -195,6 +195,10 @@ const KIND_NODE_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   // consumed (forwarded into the RenderNode), NOT dropped. `deviceRef` is
   // metadata for the out-of-bundle resolver ; the runtime ignores it.
   "x-zab.capture": new Set(["x-zab.sourceKind", "x-zab.deviceRef", "size"]),
+  // ADR Blue 009 §3.1 (Amendment 2) — slot-only meet-peer placeholder. Only a
+  // logical `x-zab.slotRef` + geometry are consumed ; NO cam/peer identity
+  // (`camRef`/`camRoomHint` were rejected — voie (b), stream-level ZabCam).
+  "x-zab.meet-peer": new Set(["x-zab.slotRef", "size"]),
 };
 
 /** RFC-0001 — `x-zab.sourceKind` enum. Visual kinds reserve a real box ;
@@ -219,6 +223,12 @@ const CAPTURE_VISUAL_KINDS: ReadonlySet<string> = new Set([
  *  uppercase, leading digit, or anything over 64 chars. Anchored, no
  *  backtracking (anti-ReDoS). */
 const CAPTURE_DEVICE_REF_RE = /^[a-z][a-z0-9-]{0,63}$/;
+
+/** ADR Blue 009 §3.1 — `x-zab.slotRef` is a logical, hash-safe slot alias,
+ *  never a volatile peerId / room id. Same grammar as `deviceRef` : rejects a
+ *  UUID, a `room:0` style id, uppercase, leading digit, or over 64 chars.
+ *  Anchored, no backtracking (anti-ReDoS). */
+const MEET_SLOT_REF_RE = /^[a-z][a-z0-9-]{0,63}$/;
 
 /** Keys `mapTextStyle` consumes inside `text.style`. */
 const TEXT_STYLE_KEYS: ReadonlySet<string> = new Set([
@@ -490,6 +500,34 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
         props["width"] = node.size.w;
         props["height"] = node.size.h;
       }
+      break;
+    }
+
+    case "x-zab.meet-peer": {
+      // ADR Blue 009 §3.1 (Amendment 2) — transparent meet-peer SLOT
+      // placeholder. The node declares ONLY a logical `slotRef` (which slot of
+      // the scene receives a meet peer) + geometry ; it carries NO cam/peer
+      // identity (camRef/camRoomHint were rejected — voie (b) : the
+      // slotRef→peer_label binding is stream-level ZabCam state, resolved at
+      // runtime). Validate the slotRef HARD (a malformed directive throws,
+      // never warns) and forward it verbatim. Lumencast reserves a box and
+      // resolves no peer ; the scene stays fully cam-agnostic.
+      const slotRef = node["x-zab.slotRef"];
+      if (typeof slotRef !== "string" || !MEET_SLOT_REF_RE.test(slotRef)) {
+        throw invalid(
+          node.id,
+          "x-zab.slotRef",
+          "must be a logical slot alias matching ^[a-z][a-z0-9-]{0,63}$ — never a peerId / room id (ADR Blue 009 §3.1)",
+        );
+      }
+      // A meet-peer slot is always a visual box (it renders a transparent
+      // placeholder until bound), so `size` is required.
+      if (node.size === undefined) {
+        throw invalid(node.id, "size", "is required for a meet-peer slot (visual placeholder)");
+      }
+      props["x-zab.slotRef"] = slotRef;
+      props["width"] = node.size.w;
+      props["height"] = node.size.h;
       break;
     }
   }
