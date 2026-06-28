@@ -14,8 +14,8 @@
 > en fin de doc. Lire l'Amendment 1 pour le comportement liant.
 
 > Implémente côté SDK TS la décision de format **RFC-0001** (`lumencast-protocol/spec/rfc/
-> RFC-0001-x-zab-capture.md`). L'RFC tranche *quoi* (le kind, sa sémantique) ; cet ADR
-> tranche *comment* dans `@lumencast/compiler` et `@lumencast/runtime`. À n'accepter
+RFC-0001-x-zab-capture.md`). L'RFC tranche _quoi_ (le kind, sa sémantique) ; cet ADR
+> tranche _comment_ dans `@lumencast/compiler` et `@lumencast/runtime`. À n'accepter
 > qu'une fois RFC-0001 en `rfc:accepted`.
 
 ## 1. Context
@@ -58,12 +58,12 @@ sans jamais acquérir de stream. État actuel pertinent du SDK :
 
 - Reconnaître `kind === "x-zab.capture"` dans `compileNode` : nouveau case qui émet un
   `RenderNode` `{ kind: "x-zab.capture", props: { "x-zab.sourceKind", "x-zab.deviceRef",
-  size, + universal props } }`.
+size, + universal props } }`.
 - Étendre la validation des props : `KIND_NODE_KEYS["x-zab.capture"] = Set(["x-zab.sourceKind",
-  "x-zab.deviceRef", "size"])` (les universal props passent déjà par `COMMON_NODE_KEYS`).
+"x-zab.deviceRef", "size"])` (les universal props passent déjà par `COMMON_NODE_KEYS`).
   Les props préfixées `x-zab.` ne déclenchent PAS de `DROPPED_FIELD`.
 - Valider la forme : `x-zab.sourceKind ∈ {media.webcam, media.screen, media.window,
-  media.app_audio, media.mic}` ; `x-zab.deviceRef` match `^[a-z][a-z0-9-]{0,63}$` (rejette un
+media.app_audio, media.mic}` ; `x-zab.deviceRef` match `^[a-z][a-z0-9-]{0,63}$` (rejette un
   `device_id` physique / UUID → `INVALID_VALUE`) ; `size` requis si `sourceKind` visuel
   (webcam/screen/window), optionnel sinon.
 - **Ne PAS** généraliser le pass-through `x-*` ici : seul `x-zab.capture` est implémenté. Tout
@@ -109,7 +109,7 @@ sans jamais acquérir de stream. État actuel pertinent du SDK :
 ## 5. Risks
 
 - **R1 — Conformance strict-fallback non corrigée.** Le runtime reste non conforme §17.1.2
-  pour les *autres* kinds inconnus. Atténuation : reconnu = pas concerné ; bug séparé tracké.
+  pour les _autres_ kinds inconnus. Atténuation : reconnu = pas concerné ; bug séparé tracké.
 - **R2 — Dérive géométrique placeholder ↔ source native.** Si l'app ne dérive pas le
   transform de la source native DE la box résolue, ça drifte. Hors format ; contrat d'app
   (à porter par l'ADR Prism). Noté pour que la frontière ne soit pas mal implémentée.
@@ -122,7 +122,7 @@ sans jamais acquérir de stream. État actuel pertinent du SDK :
 ## 6. Resolution criteria (testables)
 
 - **RC1** : un bundle contenant `{ kind: "x-zab.capture", "x-zab.sourceKind":
-  "media.webcam", "x-zab.deviceRef": "primary-cam", size:{w,h} }` compile **sans**
+"media.webcam", "x-zab.deviceRef": "primary-cam", size:{w,h} }` compile **sans**
   `DROPPED_FIELD` ni `INVALID_VALUE` et produit un `RenderNode` conservant les props vendor.
 - **RC2** : le runtime rend ce nœud comme une box de la géométrie déclarée, **0 pixel peint**,
   **0** appel `getUserMedia`/`MediaStream`/`<video>`/`<audio>` (assert par spy/DOM), **0**
@@ -155,6 +155,7 @@ peut. Implémente RFC-0001 Amendment 1 (A1.2/A1.3).
 ### A1.2 Runtime — détection de capability + 2 modes
 
 `packages/runtime/src/render/primitives/capture.tsx` :
+
 - **Capability detect au mount** : `navigator.mediaDevices?.getUserMedia` présent ET
   utilisable → ACQUIRE ; sinon PLACEHOLDER. Détection de feature, **pas** un flag d'env.
 - **ACQUIRE** (webview preview, permissions media auto-grantées) : `getUserMedia`

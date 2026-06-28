@@ -252,7 +252,12 @@ describe("x-zab.capture — RC8 : ACQUIRE on a capable host", () => {
       await renderWithRuntime({
         kind: "x-zab.capture",
         id: "scr",
-        props: { "x-zab.sourceKind": "media.screen", "x-zab.deviceRef": "", width: 100, height: 100 },
+        props: {
+          "x-zab.sourceKind": "media.screen",
+          "x-zab.deviceRef": "",
+          width: 100,
+          height: 100,
+        },
       });
       await act(async () => {
         await Promise.resolve();
@@ -292,7 +297,12 @@ describe("x-zab.capture — RC8 : ACQUIRE on a capable host", () => {
         {
           kind: "x-zab.capture",
           id: "cam",
-          props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "primary-cam", width: 640, height: 360 },
+          props: {
+            "x-zab.sourceKind": "media.webcam",
+            "x-zab.deviceRef": "primary-cam",
+            width: 640,
+            height: 360,
+          },
         },
         resolveCaptureDevice,
       );
@@ -321,7 +331,12 @@ describe("x-zab.capture — RC9 : host device resolver", () => {
         {
           kind: "x-zab.capture",
           id: "cam",
-          props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "primary-cam", width: 640, height: 360 },
+          props: {
+            "x-zab.sourceKind": "media.webcam",
+            "x-zab.deviceRef": "primary-cam",
+            width: 640,
+            height: 360,
+          },
         },
         resolveCaptureDevice,
       );
@@ -345,7 +360,12 @@ describe("x-zab.capture — RC9 : host device resolver", () => {
       await renderWithRuntime({
         kind: "x-zab.capture",
         id: "cam",
-        props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "", width: 640, height: 360 },
+        props: {
+          "x-zab.sourceKind": "media.webcam",
+          "x-zab.deviceRef": "",
+          width: 640,
+          height: 360,
+        },
       });
       await act(async () => {
         await Promise.resolve();
@@ -367,7 +387,12 @@ describe("x-zab.capture — RC9 : host device resolver", () => {
         {
           kind: "x-zab.capture",
           id: "cam",
-          props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "primary-cam", width: 640, height: 360 },
+          props: {
+            "x-zab.sourceKind": "media.webcam",
+            "x-zab.deviceRef": "primary-cam",
+            width: 640,
+            height: 360,
+          },
         },
         resolveCaptureDevice,
       );
@@ -395,7 +420,12 @@ describe("x-zab.capture — RC11 : tracks stopped at unmount", () => {
         {
           kind: "x-zab.capture",
           id: "cam",
-          props: { "x-zab.sourceKind": "media.webcam", "x-zab.deviceRef": "primary-cam", width: 640, height: 360 },
+          props: {
+            "x-zab.sourceKind": "media.webcam",
+            "x-zab.deviceRef": "primary-cam",
+            width: 640,
+            height: 360,
+          },
         },
         resolveCaptureDevice,
       );

@@ -69,7 +69,10 @@ export function labelKey(s: string): string {
 function wireViewer(
   viewer: MeetViewer,
   registry: PeerStreamRegistry,
-  claim: { acquire: (label: string, viewer: MeetViewer) => boolean; release: (label: string, viewer: MeetViewer) => void },
+  claim: {
+    acquire: (label: string, viewer: MeetViewer) => boolean;
+    release: (label: string, viewer: MeetViewer) => void;
+  },
 ): void {
   // Index the registry by the NORMALISED label (slug of peerName), so it matches
   // the scene node's slugified `peer_label`. Never the opaque `peerId`.
@@ -234,9 +237,7 @@ export type PeerViewerInjection =
 /** Normalise either injection shape into a multi-room viewer. forge-prism passes
  *  `window.__ZAB_PEER_VIEWER__` straight through ; a bare single-room object is
  *  wrapped as `{ rooms: [it] }`. */
-export function createPeerViewerFromInjection(
-  injection: PeerViewerInjection,
-): MultiRoomPeerViewer {
+export function createPeerViewerFromInjection(injection: PeerViewerInjection): MultiRoomPeerViewer {
   if ("rooms" in injection && Array.isArray(injection.rooms)) {
     return createMultiRoomPeerViewer(injection);
   }

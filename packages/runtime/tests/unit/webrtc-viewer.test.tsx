@@ -24,7 +24,11 @@ import type { RenderNode } from "../../src/render/bundle.js";
 import { createStore } from "../../src/state/store.js";
 import { LumencastRuntimeProvider } from "../../src/overlay/runtime-context.js";
 import { createPeerStreamRegistry } from "../../src/webrtc/peer-stream-registry.js";
-import { MeetViewer, type MeetViewerDeps, type ServerMessage } from "../../src/webrtc/meet-viewer.js";
+import {
+  MeetViewer,
+  type MeetViewerDeps,
+  type ServerMessage,
+} from "../../src/webrtc/meet-viewer.js";
 import {
   createPeerViewer,
   createMultiRoomPeerViewer,
@@ -282,7 +286,11 @@ describe("MeetViewer — viewer role, recvonly, no publish", () => {
                 ],
               }
             : {
-                codecs: [{ mimeType: "audio/opus" }, { mimeType: "audio/telephone-event" }, { mimeType: "audio/PCMU" }],
+                codecs: [
+                  { mimeType: "audio/opus" },
+                  { mimeType: "audio/telephone-event" },
+                  { mimeType: "audio/PCMU" },
+                ],
               },
       },
       configurable: true,
@@ -307,7 +315,10 @@ describe("MeetViewer — viewer role, recvonly, no publish", () => {
       if (original === undefined) {
         delete (globalThis as { RTCRtpReceiver?: unknown }).RTCRtpReceiver;
       } else {
-        Object.defineProperty(globalThis, "RTCRtpReceiver", { value: original, configurable: true });
+        Object.defineProperty(globalThis, "RTCRtpReceiver", {
+          value: original,
+          configurable: true,
+        });
       }
     }
   });
@@ -332,7 +343,10 @@ describe("MeetViewer — viewer role, recvonly, no publish", () => {
       expect(pc.txOf("audio")!.pinned).toBeNull();
     } finally {
       if (original !== undefined) {
-        Object.defineProperty(globalThis, "RTCRtpReceiver", { value: original, configurable: true });
+        Object.defineProperty(globalThis, "RTCRtpReceiver", {
+          value: original,
+          configurable: true,
+        });
       }
     }
   });

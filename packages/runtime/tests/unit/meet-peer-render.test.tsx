@@ -123,7 +123,14 @@ describe("meet.peer — RC-Geo (exact node box, never full-screen)", () => {
       {
         kind: "meet.peer",
         id: "cam",
-        props: { peer_label: "host_cam", object_fit: "contain", x: 0, y: 900, width: 320, height: 180 },
+        props: {
+          peer_label: "host_cam",
+          object_fit: "contain",
+          x: 0,
+          y: 900,
+          width: 320,
+          height: 180,
+        },
       },
       resolvePeerStream,
     );
@@ -247,8 +254,16 @@ describe("meet.peer — z-order = sibling order", () => {
         id: "scene",
         props: {},
         children: [
-          { kind: "meet.peer", id: "game", props: { peer_label: "game_main", width: 1920, height: 1080 } },
-          { kind: "meet.peer", id: "cam", props: { peer_label: "host_cam", x: 0, y: 900, width: 320, height: 180 } },
+          {
+            kind: "meet.peer",
+            id: "game",
+            props: { peer_label: "game_main", width: 1920, height: 1080 },
+          },
+          {
+            kind: "meet.peer",
+            id: "cam",
+            props: { peer_label: "host_cam", x: 0, y: 900, width: 320, height: 180 },
+          },
         ],
       },
       resolvePeerStream,
