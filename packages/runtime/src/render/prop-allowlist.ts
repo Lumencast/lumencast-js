@@ -124,6 +124,12 @@ export const PRIMITIVE_PROP_ALLOWLIST: Readonly<Record<RenderKind, ReadonlySet<s
   // metadata (the renderer reserves the box, ignores deviceRef). Listed so
   // they are NOT flagged as silent drops by the anti-drop audit.
   "x-zab.capture": allow(["x-zab.sourceKind", "x-zab.deviceRef", "width", "height"]),
+  // ADR Blue 009 §3.1 (Amendment 2) — vendor meet-peer SLOT placeholder.
+  // `width`/`height` are the flattened geometry (universal) ; `x-zab.slotRef`
+  // is the logical slot identity carried as metadata (the runtime resolves
+  // `slotRef → peer_label` from stream-level ZabCam state). NO cam/peer
+  // identity is carried. Listed so they are NOT flagged as silent drops.
+  "x-zab.meet-peer": allow(["x-zab.slotRef", "width", "height"]),
   // `repeat` is dispatched specially by the tree ; its only consumed
   // binding is `items`.
   repeat: new Set(["items"]),

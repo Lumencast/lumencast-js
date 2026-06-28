@@ -33,7 +33,13 @@ export type RenderKind =
   // Zab vendor primitive (RFC-0001, §17.1) — a transparent capture
   // placeholder. Recognised by the Zab-plugin runtime ; reserves a box and
   // renders nothing.
-  | "x-zab.capture";
+  | "x-zab.capture"
+  // Zab vendor primitive (ADR Blue 009 §3.1, Amendment 2) — a transparent
+  // meet-peer SLOT placeholder. Declares only a logical `x-zab.slotRef` (which
+  // slot receives a meet peer) + geometry ; carries NO cam/peer identity. The
+  // runtime resolves `slotRef → peer_label` from stream-level ZabCam state and
+  // renders the bound peer ; an unbound slot renders a transparent box.
+  | "x-zab.meet-peer";
 
 export interface RenderNode {
   kind: RenderKind;
