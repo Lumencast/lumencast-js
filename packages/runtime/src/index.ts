@@ -37,6 +37,18 @@ export type { ResolveCaptureDevice } from "./render/primitives/capture.js";
 // runtime's contract.
 export type { ResolvePeerStream, SubscribePeerStream } from "./render/primitives/media.js";
 
+// ADR Blue 009 §3.2–3.3 — reserved `__cam.*` LSDP leaves (slot→peer assignments
+// + receive-only viewer creds) surfaced to the host via `MountOptions
+// .onReservedLeaves`. Exported so the consuming host (Solar) types its sink and
+// reuses the reserved-path predicate / wire-name constants without re-deriving.
+export {
+  CAM_RESERVED_PREFIX,
+  CAM_SLOTS_PREFIX,
+  CAM_VIEWER_LEAF,
+  isReservedCamPath,
+  type ReservedCamLeaves,
+} from "./state/reserved-leaves.js";
+
 // ADR 006 #3 — WebRTC viewer (mesh, viewer role) + peer-stream registry. The
 // #3↔#4 bridge : a viewer joins Meet room(s), receives N peers and returns the
 // `resolvePeerStream` / `subscribePeerStream` the `media`/`meet.peer` LIVE render
