@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { LumencastApp } from "./app.js";
 import { applyDelta } from "./state/apply-delta.js";
 import { applySnapshot } from "./state/apply-snapshot.js";
+import { createReservedLeafObserver } from "./state/reserved-leaves.js";
 import { createStore } from "./state/store.js";
 import { createBundleFetcher, type BundleFetcher, type RenderBundle } from "./render/bundle.js";
 import { WsClient, type ConnectionStatus, type TransportError } from "./transport/ws.js";
@@ -45,6 +46,15 @@ export function mount(options: MountOptions): LumencastHandle {
 
   let active = true;
 
+  // ADR Blue 009 §3.2–3.3 — surface the reserved `__cam.*` LSDP leaves (the
+  // slot→peer assignments + the receive-only viewer creds) to the host so its
+  // WebRTC viewer (Solar) can drive room joins + `x-zab.meet-peer` slot re-keying.
+  // The runtime never joins, holds creds, or re-keys ; it only forwards. Created
+  // only when the host opts in — zero cost on the preview/headless paths.
+  const reservedLeaves = options.onReservedLeaves
+    ? createReservedLeafObserver(options.onReservedLeaves)
+    : undefined;
+
   // ADR 001 §3.4 (issue #34) — anti-silent-drop diagnostics are events
   // surfaced to the host, never console logs in `broadcast` mode.
   const removeDiagnosticsHandler = options.onDiagnostic
@@ -59,6 +69,7 @@ export function mount(options: MountOptions): LumencastHandle {
     onStatus: setStatus,
     onSnapshot: (frame) => {
       if (!active) return;
+      reservedLeaves?.onSnapshot(frame.state);
       void onSnapshot(
         bundleFetcher,
         bundleSignal,
@@ -78,6 +89,7 @@ export function mount(options: MountOptions): LumencastHandle {
       if (!active) return;
       const start = performance.now();
       applyDelta(store, frame);
+      reservedLeaves?.onDelta(frame.patches);
       options.onMetric?.({
         name: "delta_applied",
         duration_ms: performance.now() - start,

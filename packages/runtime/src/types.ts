@@ -3,6 +3,7 @@
 import type { ErrorCode } from "@lumencast/protocol";
 import type { ResolveCaptureDevice } from "./render/primitives/capture";
 import type { ResolvePeerStream, SubscribePeerStream } from "./render/primitives/media";
+import type { ReservedCamLeaves } from "./state/reserved-leaves";
 
 export type LumencastMode = "broadcast" | "control" | "test";
 
@@ -92,6 +93,17 @@ export interface MountOptions {
    *  re-renders when its peer joins mid-show. `createPeerViewer()` returns one.
    *  Preferred over `resolvePeerStream` when both are supplied. */
   subscribePeerStream?: SubscribePeerStream;
+  /** ADR Blue 009 §3.2–3.3 — host sink for the reserved `__cam.*` LSDP leaves
+   *  (never rendered, never bound to a node). Called with the full current
+   *  projection whenever it changes : `viewer` carries the receive-only viewer
+   *  creds (`__cam.viewer`, Orion #268) and `slots` the `slotRef → peer_label`
+   *  snapshot (`__cam.slots.*`, Orion #267). The host (Solar) feeds `viewer` into
+   *  its peer-viewer injection and drives its slot-binding registry's
+   *  `assign(slotRef, peer_label | null)` so `x-zab.meet-peer` nodes re-key by
+   *  `slotRef`. Receive-only : the runtime forwards the token verbatim, never
+   *  reads it. Omit it and the reserved leaves are simply not surfaced (the
+   *  preview/headless paths are unaffected). */
+  onReservedLeaves?: (leaves: ReservedCamLeaves) => void;
 }
 
 export interface LumencastHandle {

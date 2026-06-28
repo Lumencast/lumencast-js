@@ -13,6 +13,7 @@ import { Image } from "./image";
 import { Shape } from "./shape";
 import { Media } from "./media";
 import { MeetPeer } from "./meet-peer";
+import { MeetPeerSlot } from "./meet-peer-slot";
 import { Instance } from "./instance";
 import { Capture } from "./capture";
 // `repeat` is dispatched specially in the tree (it iterates a bound
@@ -55,4 +56,9 @@ export const PRIMITIVES: Partial<Record<RenderKind, ComponentType<PrimitiveProps
   instance: Instance,
   // RFC-0001 / ADR 004 — Zab vendor capture placeholder (transparent, inert).
   "x-zab.capture": Capture,
+  // ADR Blue 009 §3.1 (Amendment 2) — Zab vendor meet-peer SLOT placeholder.
+  // Carries only a logical `x-zab.slotRef` ; the host's slot-aware peer-stream
+  // registry resolves `slotRef → peer_label → MediaStream` (transparent when
+  // unbound). Closes the kind→primitive gap that left it an unknown-kind drop.
+  "x-zab.meet-peer": MeetPeerSlot,
 };
