@@ -172,7 +172,7 @@ const REPEAT_NODE_KEYS: ReadonlySet<string> = new Set([
 
 /** Per-kind keys consumed by the `switch` in `compileNode`. */
 const KIND_NODE_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
-  stack: new Set(["direction", "gap", "align", "justify", "padding", "rtl"]),
+  stack: new Set(["direction", "gap", "align", "justify", "padding", "rtl", "size"]),
   grid: new Set(["columns", "rows", "gap", "padding"]),
   frame: new Set(["size", "position", "background", "backgrounds", "clipsContent", "cornerRadius"]),
   text: new Set(["style", "format", "maxLines"]),
@@ -354,6 +354,14 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
       if (node.justify !== undefined) props["justify"] = mapJustify(node.justify);
       if (node.padding !== undefined) props["padding"] = node.padding;
       if (node.rtl !== undefined) props["rtl"] = node.rtl;
+      // A fixed-size auto-layout frame serialises to a `stack` carrying its own
+      // `size` ; forward it to width/height so Solar establishes the box (a
+      // `sizing:fixed` stack with no dimensions otherwise collapses to 0 — the
+      // canevas-chat-sponso right column / camera rail).
+      if (node.size !== undefined) {
+        props["width"] = node.size.w;
+        props["height"] = node.size.h;
+      }
       break;
 
     case "grid":

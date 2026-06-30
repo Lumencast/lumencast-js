@@ -295,6 +295,10 @@ export interface LSMLStack extends LSMLBaseNode {
   justify?: "start" | "center" | "end" | "space-between" | "space-around";
   padding?: number | [number, number, number, number];
   rtl?: "auto" | boolean;
+  /** Explicit box dimensions for a fixed-size auto-layout frame. Lowered to
+   *  render `width`/`height` so a `sizing:fixed` stack establishes its box
+   *  instead of collapsing to 0 (compile.ts case "stack"). */
+  size?: { w: number; h: number };
 }
 
 export interface LSMLGrid extends LSMLBaseNode {
