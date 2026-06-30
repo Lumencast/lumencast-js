@@ -72,6 +72,61 @@ describe("PeerStreamRegistry — the #3↔#4 bridge store", () => {
     r.set("game_main", a);
     expect(seen).toEqual([a, null]); // no emit after unsubscribe
   });
+
+  it("orderedLabels reflects arrival order and drops departed peers", () => {
+    const r = createPeerStreamRegistry();
+    expect(r.orderedLabels()).toEqual([]);
+    r.set("first", realStream());
+    r.set("second", realStream());
+    r.set("third", realStream());
+    expect(r.orderedLabels()).toEqual(["first", "second", "third"]);
+    // Departure of the middle peer shifts the tail up by one.
+    r.remove("second");
+    expect(r.orderedLabels()).toEqual(["first", "third"]);
+    // Re-setting an existing label's stream keeps its arrival slot.
+    r.set("first", realStream());
+    expect(r.orderedLabels()).toEqual(["first", "third"]);
+  });
+
+  it("subscribeRoster fires on connect / leave, not on a stream replacement", () => {
+    const r = createPeerStreamRegistry();
+    let ticks = 0;
+    const unsub = r.subscribeRoster(() => {
+      ticks += 1;
+    });
+    const a = realStream();
+    r.set("p1", a); // new arrival → tick
+    expect(ticks).toBe(1);
+    r.set("p1", a); // idempotent same stream → no tick
+    expect(ticks).toBe(1);
+    r.set("p1", realStream()); // replace existing label's stream → no roster shift
+    expect(ticks).toBe(1);
+    r.set("p2", realStream()); // new arrival → tick
+    expect(ticks).toBe(2);
+    r.remove("p1"); // departure → tick
+    expect(ticks).toBe(3);
+    r.remove("p1"); // absent → no tick
+    expect(ticks).toBe(3);
+    unsub();
+    r.set("p3", realStream());
+    expect(ticks).toBe(3); // no tick after unsubscribe
+  });
+
+  it("clear emits one roster tick when non-empty, none when already empty", () => {
+    const r = createPeerStreamRegistry();
+    let ticks = 0;
+    r.subscribeRoster(() => {
+      ticks += 1;
+    });
+    r.clear(); // already empty → no tick
+    expect(ticks).toBe(0);
+    r.set("p1", realStream());
+    r.set("p2", realStream());
+    ticks = 0;
+    r.clear(); // non-empty → one tick
+    expect(ticks).toBe(1);
+    expect(r.orderedLabels()).toEqual([]);
+  });
 });
 
 /* ------------------------------------------------------------------ */

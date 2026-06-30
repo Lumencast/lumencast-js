@@ -76,6 +76,7 @@ export {
   type RemoteTrackEvent,
   type PeerStreamRegistry,
   type PeerStreamListener,
+  type RosterListener,
 } from "./webrtc/index.js";
 
 // Bundle types are useful for hosts that want to typecheck pre-compiled scenes.
