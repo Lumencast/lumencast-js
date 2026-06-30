@@ -28,6 +28,7 @@ export {
   createPeerStreamRegistry,
   type PeerStreamRegistry,
   type PeerStreamListener,
+  type RosterListener,
 } from "./peer-stream-registry.js";
 
 export interface PeerViewer {
