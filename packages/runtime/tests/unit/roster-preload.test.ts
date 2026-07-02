@@ -100,9 +100,7 @@ describe("WsClient — scene_roster dispatch (transport)", () => {
     sock.fireOpen();
 
     // Baseline the tracker at seq=1.
-    sock.deliver(
-      snapshot({ seq: 1, scene_id: "A", scene_version: "sha256:vA", state: {} }),
-    );
+    sock.deliver(snapshot({ seq: 1, scene_id: "A", scene_version: "sha256:vA", state: {} }));
     // Roster arrives BETWEEN snapshot and the next delta.
     sock.deliver(
       sceneRoster({
@@ -188,9 +186,7 @@ describe("mount — roster preload warms the bundle cache", () => {
     sock.fireOpen();
 
     // Active scene A: its snapshot drives the on-demand bundle fetch.
-    sock.deliver(
-      snapshot({ seq: 1, scene_id: "A", scene_version: "sha256:vA", state: {} }),
-    );
+    sock.deliver(snapshot({ seq: 1, scene_id: "A", scene_version: "sha256:vA", state: {} }));
     await tick();
 
     // Server advertises the full roster. B and C get warmed in the background.
@@ -210,18 +206,13 @@ describe("mount — roster preload warms the bundle cache", () => {
     expect(countFetches("sha256:vB")).toBe(1);
     expect(countFetches("sha256:vC")).toBe(1);
     const preloaded = metrics.filter((m) => m.name === "roster_preloaded");
-    expect(preloaded.map((m) => m.scene_version).sort()).toEqual([
-      "sha256:vB",
-      "sha256:vC",
-    ]);
+    expect(preloaded.map((m) => m.scene_version).sort()).toEqual(["sha256:vB", "sha256:vC"]);
 
     // Operator switches to B → scene_changed + fresh snapshot. The bundle is
     // already warm, so NO new fetch fires for vB.
     const beforeSwitch = countFetches("sha256:vB");
     sock.deliver(sceneChanged({ seq: 2, scene_id: "B", scene_version: "sha256:vB" }));
-    sock.deliver(
-      snapshot({ seq: 1, scene_id: "B", scene_version: "sha256:vB", state: {} }),
-    );
+    sock.deliver(snapshot({ seq: 1, scene_id: "B", scene_version: "sha256:vB", state: {} }));
     await tick();
     expect(countFetches("sha256:vB")).toBe(beforeSwitch); // cache hit, no refetch
 
