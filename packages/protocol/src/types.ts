@@ -153,7 +153,45 @@ export interface PongFrame {
   nonce?: string;
 }
 
-export type ServerFrame = SnapshotFrame | DeltaFrame | SceneChangedFrame | ErrorFrame | PongFrame;
+/** One entry of a {@link SceneRosterFrame}: a scene id paired with its
+ * current content-addressed version. */
+export interface SceneRosterEntry {
+  scene_id: SceneId;
+  scene_version: SceneVersion;
+}
+
+/**
+ * Out-of-band roster advertisement (LSDP/1.1, additive — server MAY emit).
+ * Lists every pre-built scene of the live show with its current
+ * content-addressed version, so a receiver can WARM its render-bundle cache
+ * ahead of a scene switch (the render bundle is addressed by `scene_version`).
+ *
+ * Carries NO sequence: it is metadata about the show roster, not a point in
+ * the snapshot/delta stream, and MUST NOT advance or fault a receiver's
+ * sequence tracker (same posture as {@link PongFrame}). A server sends it
+ * after the initial `snapshot` and re-sends it whenever the roster changes
+ * (scene loaded / unloaded / re-pushed with a new version).
+ *
+ * 1.0 / older receivers ignore the unknown `type` per LSDP/1 §13 — the whole
+ * feature is fully backward-compatible in both directions (an old server never
+ * emits it; a new receiver against an old server simply never warms).
+ */
+export interface SceneRosterFrame {
+  v: typeof PROTOCOL_VERSION;
+  type: "scene_roster";
+  /** Every scene of the live show with its current version. MAY be empty. */
+  entries: SceneRosterEntry[];
+  /** ISO 8601 timestamp. Optional. */
+  ts?: string;
+}
+
+export type ServerFrame =
+  | SnapshotFrame
+  | DeltaFrame
+  | SceneChangedFrame
+  | ErrorFrame
+  | PongFrame
+  | SceneRosterFrame;
 
 // --- Client → server frames -------------------------------------------------
 

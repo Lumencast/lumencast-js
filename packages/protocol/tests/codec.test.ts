@@ -11,6 +11,7 @@ import {
   ping,
   snapshot,
   sceneChanged,
+  sceneRoster,
   subscribe,
   PROTOCOL_VERSION,
 } from "../src/index.js";
@@ -72,6 +73,38 @@ describe("codec — server frames round-trip", () => {
   it("returns null for unknown server frame type (forward-compat)", () => {
     const raw = JSON.stringify({ v: 1, type: "future_frame", seq: 1 });
     expect(decodeServerFrame(raw)).toBeNull();
+  });
+
+  it("encodes & decodes a scene_roster", () => {
+    const frame = sceneRoster({
+      entries: [
+        { scene_id: "main-stage", scene_version: "sha256:abc" },
+        { scene_id: "intermission", scene_version: "sha256:def" },
+      ],
+      ts: "2026-07-02T12:00:00Z",
+    });
+    const round = decodeServerFrame(encodeFrame(frame));
+    expect(round).toEqual(frame);
+  });
+
+  it("encodes & decodes an empty scene_roster", () => {
+    const frame = sceneRoster({ entries: [] });
+    const round = decodeServerFrame(encodeFrame(frame));
+    expect(round).toEqual(frame);
+  });
+
+  it("rejects a scene_roster whose entries is not an array", () => {
+    const raw = JSON.stringify({ v: 1, type: "scene_roster", entries: {} });
+    expect(() => decodeServerFrame(raw)).toThrow(LumencastError);
+  });
+
+  it("rejects a scene_roster entry missing scene_version", () => {
+    const raw = JSON.stringify({
+      v: 1,
+      type: "scene_roster",
+      entries: [{ scene_id: "main-stage" }],
+    });
+    expect(() => decodeServerFrame(raw)).toThrow(LumencastError);
   });
 });
 
