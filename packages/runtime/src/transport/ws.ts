@@ -25,6 +25,7 @@ import {
   type ErrorFrame,
   type Patch,
   type SceneChangedFrame,
+  type SceneRosterFrame,
   type SnapshotFrame,
 } from "@lumencast/protocol";
 import type { LumencastToken } from "../types.js";
@@ -57,6 +58,9 @@ export interface WsClientOptions {
   onSnapshot?: (frame: SnapshotFrame) => void;
   onDelta?: (frame: DeltaFrame) => void;
   onSceneChanged?: (frame: SceneChangedFrame) => void;
+  /** Out-of-band roster advertisement (LSDP/1.1 `scene_roster`, additive).
+   *  Carries no sequence — dispatched without touching the sequence tracker. */
+  onSceneRoster?: (frame: SceneRosterFrame) => void;
   onServerError?: (frame: ErrorFrame) => void;
   /** Wire-level / codec / unrecoverable errors. */
   onTransportError?: (err: TransportError) => void;
@@ -296,6 +300,13 @@ export class WsClient {
       case "error": {
         this.opts.onServerError?.(frame);
         if (!frame.recoverable) this.close();
+        return;
+      }
+      case "scene_roster": {
+        // Out-of-band roster metadata: NOT part of the snapshot/delta stream.
+        // It carries no seq and MUST NOT touch the sequence tracker — forward
+        // it verbatim so the host can warm its render-bundle cache.
+        this.opts.onSceneRoster?.(frame);
         return;
       }
       case "pong":

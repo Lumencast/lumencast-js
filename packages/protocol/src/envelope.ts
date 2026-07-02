@@ -15,6 +15,8 @@ import {
   type PongFrame,
   type SceneChangedFrame,
   type SceneId,
+  type SceneRosterEntry,
+  type SceneRosterFrame,
   type SceneTransition,
   type SceneVersion,
   type SessionId,
@@ -89,6 +91,23 @@ export function sceneChanged(init: SceneChangedInit): SceneChangedFrame {
   if (init.ts !== undefined) frame.ts = init.ts;
   if (init.from_scene_id !== undefined) frame.from_scene_id = init.from_scene_id;
   if (init.transition !== undefined) frame.transition = init.transition;
+  return frame;
+}
+
+export interface SceneRosterInit {
+  entries: SceneRosterEntry[];
+  ts?: string;
+}
+
+/** Build a `scene_roster` frame (LSDP/1.1, additive). Carries no sequence —
+ * it is out-of-band roster metadata, not part of the snapshot/delta stream. */
+export function sceneRoster(init: SceneRosterInit): SceneRosterFrame {
+  const frame: SceneRosterFrame = {
+    v: PROTOCOL_VERSION,
+    type: "scene_roster",
+    entries: init.entries,
+  };
+  if (init.ts !== undefined) frame.ts = init.ts;
   return frame;
 }
 

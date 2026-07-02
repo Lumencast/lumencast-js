@@ -46,6 +46,11 @@ interface MountOptions {
    *  Events — not logs: broadcast builds stay console-silent.
    *  When omitted, a DEV-only console.warn fires instead. */
   onDiagnostic?: (diagnostic: LumencastDiagnostic) => void;
+  /** Preload the render bundles of a known scene roster so the FIRST
+   *  switch to each scene is instant (a warm cache hit, not a blocking
+   *  fetch). Warmed in the background right after mount, best-effort.
+   *  See "Roster preload" below. */
+  preloadRoster?: readonly { scene_id: string; scene_version: string }[];
 }
 
 interface LumencastHandle {
@@ -80,6 +85,40 @@ const unsubscribe = addDiagnosticsHandler((d: RenderDiagnostic) => {
 
 `RenderDiagnostic` carries **only** `nodeId`, `field`, and `reason` — never the
 value of a leaf or prop (Bastion R9, ADR 001 §5.1).
+
+### Roster preload
+
+A render bundle is content-addressed by `scene_version` and fetched lazily on
+the first switch to a scene, so that first switch pays a blocking HTTP fetch.
+To make it instant, the runtime can **warm** a scene's bundle ahead of time
+into the fetcher cache. There are two ways to feed the roster; both populate the
+same cache and are idempotent per `scene_version`:
+
+- **`preloadRoster` mount option** — for hosts that already know the roster at
+  mount time. Warmed in the background right after `mount()`:
+
+  ```ts
+  mount({
+    target,
+    serverUrl,
+    token,
+    mode: "broadcast",
+    preloadRoster: [
+      { scene_id: "main-stage", scene_version: "sha256:…" },
+      { scene_id: "intermission", scene_version: "sha256:…" },
+    ],
+  });
+  ```
+
+- **`scene_roster` server frame** — the server (Orion) advertises the live-show
+  roster over LSDP/1.1. The runtime warms every advertised bundle automatically;
+  no host code is required. The frame is additive and out-of-band (it carries no
+  sequence and never touches the sequence tracker), so older runtimes ignore it.
+
+Warming is **best-effort**: a failed warm is swallowed and the scene still
+fetches on demand at switch time. Each successful warm emits an `onMetric`
+event `{ name: "roster_preloaded", scene_id, scene_version, source }` where
+`source` is `"option"` or `"frame"`.
 
 ### Profile gating (LSML 1.1 §17.5.1)
 

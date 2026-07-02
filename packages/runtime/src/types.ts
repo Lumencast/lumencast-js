@@ -1,6 +1,6 @@
 // Public types of @lumencast/runtime — must align with RUNTIME-API.md.
 
-import type { ErrorCode } from "@lumencast/protocol";
+import type { ErrorCode, SceneRosterEntry } from "@lumencast/protocol";
 import type { ResolveCaptureDevice } from "./render/primitives/capture";
 import type { ResolvePeerStream, SubscribePeerStream } from "./render/primitives/media";
 import type { ReservedCamLeaves } from "./state/reserved-leaves";
@@ -28,7 +28,12 @@ export interface LumencastMetric {
     | "frame_dropped"
     | "reconnect"
     | "snapshot_received"
-    | "scene_changed";
+    | "scene_changed"
+    /** A render bundle was warmed ahead of time from a roster entry (either a
+     *  `scene_roster` frame or the `preloadRoster` mount option). Emitted once
+     *  the warm fetch resolves (or from cache). Carries `scene_id` +
+     *  `scene_version` + `source` ("frame" | "option"). */
+    | "roster_preloaded";
   [key: string]: unknown;
 }
 
@@ -104,6 +109,17 @@ export interface MountOptions {
    *  reads it. Omit it and the reserved leaves are simply not surfaced (the
    *  preview/headless paths are unaffected). */
   onReservedLeaves?: (leaves: ReservedCamLeaves) => void;
+  /** Preload the render bundles of a known scene roster so the FIRST switch to
+   *  each scene is instant (a warm cache hit instead of a blocking fetch).
+   *  Each entry is `{ scene_id, scene_version }`. Warmed in the background right
+   *  after mount — best-effort: a failed warm is swallowed (the scene still
+   *  fetches on demand at switch time) and never blocks or errors the mount.
+   *
+   *  This is the PUBLIC preload surface (lumencast-js #87b) for hosts that
+   *  already know the roster at mount time. When the server also emits
+   *  `scene_roster` frames the runtime warms from those too — both paths feed
+   *  the same cache and are idempotent (a version is warmed at most once). */
+  preloadRoster?: readonly SceneRosterEntry[];
 }
 
 export interface LumencastHandle {

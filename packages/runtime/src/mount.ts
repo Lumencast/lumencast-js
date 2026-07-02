@@ -46,6 +46,11 @@ export function mount(options: MountOptions): LumencastHandle {
 
   let active = true;
 
+  // Render-bundle versions already warmed (or warming) by the preload path.
+  // Keeps both roster sources (the `scene_roster` frame and the `preloadRoster`
+  // mount option) idempotent — a version is fetched by the warmer at most once.
+  const warmedVersions = new Set<string>();
+
   // ADR Blue 009 §3.2–3.3 — surface the reserved `__cam.*` LSDP leaves (the
   // slot→peer assignments + the receive-only viewer creds) to the host so its
   // WebRTC viewer (Solar) can drive room joins + `x-zab.meet-peer` slot re-keying.
@@ -107,6 +112,13 @@ export function mount(options: MountOptions): LumencastHandle {
         to: frame.scene_version,
       });
     },
+    onSceneRoster: (frame) => {
+      if (!active) return;
+      // The server advertised the show roster (LSDP/1.1 `scene_roster`).
+      // Warm every scene's render bundle in the background so the first switch
+      // to each is a cache hit, not a blocking fetch.
+      warmRoster(frame.entries, "frame");
+    },
     onServerError: (frame) => {
       reportError({
         code: frame.code,
@@ -120,6 +132,12 @@ export function mount(options: MountOptions): LumencastHandle {
   });
 
   ws.start();
+
+  // Public preload surface (#87b) — warm a host-supplied roster right after
+  // mount, before any switch. Same warmer + cache as the `scene_roster` frame.
+  if (options.preloadRoster !== undefined && options.preloadRoster.length > 0) {
+    warmRoster(options.preloadRoster, "option");
+  }
 
   const root: Root = createRoot(options.target);
   root.render(
@@ -164,6 +182,42 @@ export function mount(options: MountOptions): LumencastHandle {
   };
 
   // --- helpers ----------------------------------------------------------
+
+  /**
+   * Warm the render bundles for a set of roster entries in the background.
+   * Best-effort and non-blocking: each `get()` populates the fetcher's cache
+   * keyed by `scene_version`, so the eventual `onSnapshot` fetch for that scene
+   * is an instant cache hit. Idempotent via `warmedVersions`; the already-active
+   * scene is skipped (its bundle is already loaded or in flight). A failed warm
+   * is swallowed and its version released so a later roster can retry — the
+   * scene still fetches on demand at switch time.
+   */
+  function warmRoster(
+    entries: readonly { scene_id: string; scene_version: string }[],
+    source: "frame" | "option",
+  ): void {
+    const activeVersion = bundleSignal.value?.scene_version;
+    for (const { scene_id, scene_version } of entries) {
+      if (scene_version === activeVersion) continue;
+      if (warmedVersions.has(scene_version)) continue;
+      warmedVersions.add(scene_version);
+      void bundleFetcher
+        .get(scene_id, scene_version)
+        .then(() => {
+          if (!active) return;
+          options.onMetric?.({
+            name: "roster_preloaded",
+            scene_id,
+            scene_version,
+            source,
+          });
+        })
+        .catch(() => {
+          // Release so a subsequent roster advertisement can retry the warm.
+          warmedVersions.delete(scene_version);
+        });
+    }
+  }
 
   async function onSnapshot(
     fetcher: BundleFetcher,

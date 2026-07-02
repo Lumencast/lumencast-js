@@ -16,6 +16,8 @@ import {
   type PingFrame,
   type PongFrame,
   type SceneChangedFrame,
+  type SceneRosterEntry,
+  type SceneRosterFrame,
   type SceneTransition,
   type ServerFrame,
   type SnapshotFrame,
@@ -52,6 +54,8 @@ export function decodeServerFrame(raw: string): ServerFrame | null {
       return decodeError(parsed);
     case "pong":
       return decodePong(parsed);
+    case "scene_roster":
+      return decodeSceneRoster(parsed);
     default:
       return null;
   }
@@ -155,6 +159,29 @@ function decodeError(o: Record<string, unknown>): ErrorFrame {
     frame.retry_after_ms = assertInt(o["retry_after_ms"], "error.retry_after_ms");
   }
   return frame;
+}
+
+function decodeSceneRoster(o: Record<string, unknown>): SceneRosterFrame {
+  requireFields(o, ["entries"]);
+  const raw = o["entries"];
+  if (!Array.isArray(raw)) {
+    throw protocolError(`scene_roster.entries must be an array`);
+  }
+  const entries: SceneRosterEntry[] = raw.map((e, i) => {
+    if (!isPlainObject(e)) {
+      throw protocolError(`scene_roster.entries[${i}] must be an object`);
+    }
+    return {
+      scene_id: assertString(e["scene_id"], `scene_roster.entries[${i}].scene_id`),
+      scene_version: assertString(e["scene_version"], `scene_roster.entries[${i}].scene_version`),
+    };
+  });
+  return {
+    v: PROTOCOL_VERSION,
+    type: "scene_roster",
+    entries,
+    ...optionalTs(o),
+  };
 }
 
 function decodePong(o: Record<string, unknown>): PongFrame {
