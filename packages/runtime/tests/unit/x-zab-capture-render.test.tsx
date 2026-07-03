@@ -439,6 +439,70 @@ describe("x-zab.capture — RC11 : tracks stopped at unmount", () => {
   });
 });
 
+describe("x-zab.capture — vcam-blink : shared stream across a scene switch", () => {
+  it("two nodes on the same device acquire once; the device stops only after both unmount", async () => {
+    const { stream, stop } = fakeStream();
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    const resolveCaptureDevice = vi.fn().mockReturnValue({ deviceId: "shared-vcam" });
+
+    // Two independent roots stand in for the exiting + entering scene trees that
+    // AnimatePresence mounts CONCURRENTLY during a crossfade. Both reference the
+    // same shared vcam device (ADR 007 Prism).
+    const containerB = document.createElement("div");
+    document.body.appendChild(containerB);
+    const rootB = createRoot(containerB);
+    const node: RenderNode = {
+      kind: "x-zab.capture",
+      id: "cam",
+      props: {
+        "x-zab.sourceKind": "media.webcam",
+        "x-zab.deviceRef": "shared-vcam",
+        width: 640,
+        height: 360,
+      },
+    };
+    const store = createStore();
+
+    await withMediaDevices({ getUserMedia } as never, async () => {
+      // Entering scene mounts (root A via the shared harness).
+      await renderWithRuntime(node, resolveCaptureDevice);
+      // Exiting scene still mounted (root B) — the crossfade overlap.
+      await act(async () => {
+        rootB.render(
+          <LumencastRuntimeProvider
+            value={{
+              mode: "broadcast",
+              store,
+              bundle: { root: node } as never,
+              status: "live",
+              sendInput: () => {},
+              resolveCaptureDevice,
+            }}
+          >
+            <Tree node={node} store={store} />
+          </LumencastRuntimeProvider>,
+        );
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // ONE physical acquisition despite two live nodes → no renegotiation blink.
+      expect(getUserMedia).toHaveBeenCalledTimes(1);
+
+      // Exiting scene unmounts (the switch completes) — device MUST stay live.
+      await act(async () => rootB.unmount());
+      expect(stop).not.toHaveBeenCalled();
+
+      // Entering scene later unmounts (app teardown) — now the device releases.
+      await act(async () => root.unmount());
+      expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    containerB.remove();
+  });
+});
+
 describe("x-zab.capture — RC6 : profile published + accepted", () => {
   it("SUPPORTED_PROFILES includes x-zab.capture/1", () => {
     expect(SUPPORTED_PROFILES.has("x-zab.capture/1")).toBe(true);
