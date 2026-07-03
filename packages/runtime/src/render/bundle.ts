@@ -287,6 +287,7 @@ export interface BundleFetcherOptions {
 
 class FetcherImpl implements BundleFetcher {
   private readonly cache = new Map<string, RenderBundle>();
+  private readonly inFlight = new Map<string, Promise<RenderBundle>>();
   private readonly baseUrl: string;
   private readonly pathPrefix: string;
   private readonly resolveUrl: BundleUrlResolver | undefined;
@@ -329,6 +330,19 @@ class FetcherImpl implements BundleFetcher {
   async get(sceneId: string, sceneVersion: string): Promise<RenderBundle> {
     const cached = this.cache.get(sceneVersion);
     if (cached) return cached;
+    // Bundles are content-addressed by scene_version, so a concurrent miss for
+    // the same version can share a single fetch. The entry is cleared in
+    // `finally` — a rejected fetch is never cached, so a later call retries.
+    const existing = this.inFlight.get(sceneVersion);
+    if (existing) return existing;
+    const promise = this.fetchBundle(sceneId, sceneVersion).finally(() => {
+      this.inFlight.delete(sceneVersion);
+    });
+    this.inFlight.set(sceneVersion, promise);
+    return promise;
+  }
+
+  private async fetchBundle(sceneId: string, sceneVersion: string): Promise<RenderBundle> {
     const url = this.buildUrl(sceneId, sceneVersion);
     const init = await this.buildInit();
     const response = init ? await this.fetchImpl(url, init) : await this.fetchImpl(url);
