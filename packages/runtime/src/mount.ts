@@ -241,7 +241,14 @@ export function mount(options: MountOptions): LumencastHandle {
     }
     if (!active) return;
     applyState();
-    bSignal.value = bundle;
+    // ADR 013 (Prism, issue #95) — apply the host's pure root transform once,
+    // before this bundle's first paint. A new bundle object carries the
+    // transformed root so the cached bundle stays pristine (a scene switch
+    // re-transforms the original root, never an already-transformed one). The
+    // transform reparents/reorders nodes without re-keying leaves, so deltas
+    // keep addressing leaves by their original path on the flat store.
+    const transform = options.transformRoot;
+    bSignal.value = transform ? { ...bundle, root: transform(bundle.root) } : bundle;
     cSignal.value = `${sceneId}::${sceneVersion}`;
   }
 }

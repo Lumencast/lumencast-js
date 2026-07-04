@@ -1,6 +1,7 @@
 // Public types of @lumencast/runtime — must align with RUNTIME-API.md.
 
 import type { ErrorCode, SceneRosterEntry } from "@lumencast/protocol";
+import type { RenderNode } from "./render/bundle";
 import type { ResolveCaptureDevice } from "./render/primitives/capture";
 import type { ResolvePeerStream, SubscribePeerStream } from "./render/primitives/media";
 import type { ReservedCamLeaves } from "./state/reserved-leaves";
@@ -120,6 +121,31 @@ export interface MountOptions {
    *  `scene_roster` frames the runtime warms from those too — both paths feed
    *  the same cache and are idempotent (a version is warmed at most once). */
   preloadRoster?: readonly SceneRosterEntry[];
+  /** ADR 013 (Prism) — pure transform applied to a fetched render bundle's
+   *  `root` node once, right before it is handed to the renderer for the
+   *  first paint of that bundle. The transformed tree is what actually
+   *  renders; the runtime never mutates the fetched bundle (the cached copy
+   *  stays pristine, so a scene switch re-transforms the original root, not
+   *  an already-transformed one).
+   *
+   *  Runs on the BUNDLE load path only (the initial snapshot and every
+   *  subsequent scene switch) — NEVER per delta. Deltas remain flat patches
+   *  applied to leaves by their state path in the store (`state/store.ts`,
+   *  one signal per leaf-path); they do not re-run this hook.
+   *
+   *  INVARIANT — the store is flat and addresses leaves by path. A transform
+   *  MAY reparent existing nodes under new wrapper frames and MAY rewrite
+   *  geometry, but it MUST NOT change any leaf's `id` or the state path its
+   *  bindings resolve to. Re-keying a leaf would orphan the deltas that keep
+   *  addressing it by its original path. As long as only the parent / z-order
+   *  / geometry changes (never the leaf-path), the transform stays delta-safe
+   *  — a later delta targeting a reparented leaf by its original path still
+   *  applies. This is the exact contract Solar's `buildAtlasRoot`
+   *  (RenderNode → RenderNode, z-band splitting) relies on (issue #95).
+   *
+   *  Omit it and `mount()` behaves exactly as before (strict non-regression):
+   *  the fetched bundle is rendered verbatim. */
+  transformRoot?: (root: RenderNode) => RenderNode;
 }
 
 export interface LumencastHandle {
