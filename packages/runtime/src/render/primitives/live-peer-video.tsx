@@ -24,16 +24,30 @@ import { useOptionalLumencastRuntime } from "../../overlay/runtime-context";
 export function LivePeerVideo({
   peerLabel,
   objectFit,
-  muted = true,
+  muted,
 }: {
   peerLabel: string;
   objectFit: string;
-  /** Audio playout hint. Always muted for now (broadcast audio is Pulsar-side). */
+  /** Explicit playout override. When set, it WINS (a node can force a local
+   *  mute for its own reason). When left undefined (the normal case), the mute
+   *  state is decided by the host via `runtime.liveAudio` : muted UNLESS the
+   *  host declared it is the flux réellement diffusé/enregistré. */
   muted?: boolean;
 }) {
   const runtime = useOptionalLumencastRuntime();
   const resolvePeerStream = runtime?.resolvePeerStream;
   const subscribePeerStream = runtime?.subscribePeerStream;
+  // A guest peer's audio lives ONLY inside its WebRTC `MediaStreamTrack` on this
+  // page — there is no native Pulsar/OBS audio device for a remote peer (unlike
+  // a local webcam, whose mic is a separate native Audio Input source). Muting
+  // this element therefore deletes that audio from the on-air / recording mix
+  // for good. So we mute by DEFAULT and only un-mute when the host explicitly
+  // opts in via `liveAudio` — a host that KNOWS it is the on-air / REC render
+  // (the antenne, the test-REC, the Pulsar CEF atlas). It must NEVER be set on
+  // an interactive preview/editor host (the operator may have the same ZabCam
+  // room open elsewhere → audio feedback / echo). An explicit `muted` prop
+  // still wins over this default. See `MountOptions.liveAudio`.
+  const isMuted = muted ?? !runtime?.liveAudio;
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -77,7 +91,7 @@ export function LivePeerVideo({
       ref={videoRef}
       data-lumencast-media-live
       autoPlay
-      muted={muted}
+      muted={isMuted}
       playsInline
       style={{
         width: "100%",

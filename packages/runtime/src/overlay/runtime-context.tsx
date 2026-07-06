@@ -27,6 +27,12 @@ export interface LumencastRuntime {
    *  connect and `null` on leave, so a LIVE `media` node re-renders when its
    *  peer joins mid-show. Preferred over `resolvePeerStream` when present. */
   subscribePeerStream?: SubscribePeerStream;
+  /** Injected from `MountOptions.liveAudio`. When `true`, the LIVE peer `<video>`
+   *  renders un-muted so the guest's WebRTC audio reaches the page output (and
+   *  the on-air / recording mix). Absent / `false` → muted (current behaviour).
+   *  Only a genuinely on-air / recording host should set it — never an
+   *  interactive editor (echo risk). See `MountOptions.liveAudio`. */
+  liveAudio?: boolean;
 }
 
 const Ctx = createContext<LumencastRuntime | null>(null);

@@ -43,6 +43,9 @@ export interface LumencastAppProps {
   resolvePeerStream?: ResolvePeerStream;
   /** ADR 006 #3 — reactive peer-stream channel (preferred over the resolver). */
   subscribePeerStream?: SubscribePeerStream;
+  /** Un-mute LIVE peer `<video>` so guest WebRTC audio joins the on-air mix.
+   *  On-air / recording hosts only (echo risk in an interactive editor). */
+  liveAudio?: boolean;
 }
 
 export function LumencastApp({
@@ -55,6 +58,7 @@ export function LumencastApp({
   resolveCaptureDevice,
   resolvePeerStream,
   subscribePeerStream,
+  liveAudio,
 }: LumencastAppProps) {
   useSignals();
 
@@ -86,6 +90,7 @@ export function LumencastApp({
             ...(resolveCaptureDevice !== undefined ? { resolveCaptureDevice } : {}),
             ...(resolvePeerStream !== undefined ? { resolvePeerStream } : {}),
             ...(subscribePeerStream !== undefined ? { subscribePeerStream } : {}),
+            ...(liveAudio !== undefined ? { liveAudio } : {}),
           }}
         >
           <Suspense fallback={null}>

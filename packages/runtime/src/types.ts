@@ -99,6 +99,18 @@ export interface MountOptions {
    *  re-renders when its peer joins mid-show. `createPeerViewer()` returns one.
    *  Preferred over `resolvePeerStream` when both are supplied. */
   subscribePeerStream?: SubscribePeerStream;
+  /** Un-mute the live `<video>` of `meet.peer` / `x-zab.meet-peer` peers so the
+   *  guest's WebRTC audio track joins the page's audio output (and thus the
+   *  on-air / recording mix — an OBS/Pulsar `browser_source` captures page audio
+   *  by default). Muted by default (omitted / `false`) to preserve the current
+   *  behaviour for every consumer that does not opt in.
+   *
+   *  DANGER — set this ONLY on a host that KNOWS it is the flux réellement
+   *  diffusé/enregistré (the antenne, the REC/test render, the Pulsar CEF atlas).
+   *  NEVER set it on an interactive preview/editor host (e.g. the Prism editor
+   *  webview) : the operator may have the same ZabCam room open elsewhere and
+   *  un-muting the peer there would create audio feedback / echo. */
+  liveAudio?: boolean;
   /** ADR Blue 009 §3.2–3.3 — host sink for the reserved `__cam.*` LSDP leaves
    *  (never rendered, never bound to a node). Called with the full current
    *  projection whenever it changes : `viewer` carries the receive-only viewer

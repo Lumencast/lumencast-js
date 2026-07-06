@@ -164,6 +164,10 @@ export function mount(options: MountOptions): LumencastHandle {
       ...(options.subscribePeerStream !== undefined
         ? { subscribePeerStream: options.subscribePeerStream }
         : {}),
+      // Un-mute LIVE peer `<video>` so guest WebRTC audio joins the on-air /
+      // recording mix. On-air / recording hosts only — never an interactive
+      // editor (echo risk). Omitted → muted (current behaviour).
+      ...(options.liveAudio !== undefined ? { liveAudio: options.liveAudio } : {}),
     }),
   );
 
