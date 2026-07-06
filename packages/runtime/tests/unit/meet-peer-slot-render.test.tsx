@@ -62,6 +62,7 @@ async function render(node: RenderNode): Promise<void> {
 async function renderWithViewer(
   node: RenderNode,
   resolvePeerStream?: ResolvePeerStream,
+  liveAudio?: boolean,
 ): Promise<void> {
   const store = createStore();
   await act(async () => {
@@ -74,6 +75,7 @@ async function renderWithViewer(
           status: "live",
           sendInput: () => {},
           ...(resolvePeerStream !== undefined ? { resolvePeerStream } : {}),
+          ...(liveAudio !== undefined ? { liveAudio } : {}),
         }}
       >
         <Tree node={node} store={store} />
@@ -124,6 +126,39 @@ describe("x-zab.meet-peer — unbound slot → transparent placeholder", () => {
     expect(container.querySelector("video")).toBeNull();
     expect(container.querySelector("[data-lumencast-meet-peer-slot]")).not.toBeNull();
     expect(diagnostics).toHaveLength(0);
+  });
+});
+
+describe("x-zab.meet-peer — live audio gated by the host's liveAudio option", () => {
+  const slotNode: RenderNode = {
+    kind: "x-zab.meet-peer",
+    id: "slot",
+    props: { "x-zab.slotRef": "cam-caster-1" },
+  };
+
+  it("stays muted when the host does NOT opt in (non-regression)", async () => {
+    const resolvePeerStream = vi.fn().mockReturnValue(realStream());
+    // No `liveAudio` — the guest's WebRTC audio must NOT reach the mix here
+    // (an interactive editor / preview host would echo).
+    await renderWithViewer(slotNode, resolvePeerStream);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const video = container.querySelector("video") as HTMLVideoElement | null;
+    expect(video).not.toBeNull();
+    expect(video!.muted).toBe(true);
+  });
+
+  it("un-mutes when the host declares liveAudio (on-air / REC render)", async () => {
+    const resolvePeerStream = vi.fn().mockReturnValue(realStream());
+    await renderWithViewer(slotNode, resolvePeerStream, true);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const video = container.querySelector("video") as HTMLVideoElement | null;
+    expect(video).not.toBeNull();
+    // The guest's audio track now joins the page output → the on-air mix.
+    expect(video!.muted).toBe(false);
   });
 });
 

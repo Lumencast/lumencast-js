@@ -51,5 +51,8 @@ export function MeetPeerSlot({ resolved }: PrimitiveProps) {
   // straight to `resolvePeerStream`/`subscribePeerStream`, and the host's
   // slot-aware registry translates the slotRef to the bound peer's stream. An
   // unbound slot resolves to `null` → the transparent placeholder.
-  return <LivePeerVideo peerLabel={slotRef} objectFit="cover" muted />;
+  // No fixed `muted` — let `LivePeerVideo` decide from the host's
+  // `runtime.liveAudio` (muted on a preview/editor host, un-muted on the
+  // on-air / REC render so the guest's WebRTC audio reaches the mix).
+  return <LivePeerVideo peerLabel={slotRef} objectFit="cover" />;
 }

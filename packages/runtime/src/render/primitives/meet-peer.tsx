@@ -51,7 +51,12 @@ export function MeetPeer({ resolved }: PrimitiveProps) {
     typeof resolved.object_fit === "string" && resolved.object_fit.length > 0
       ? resolved.object_fit
       : "cover";
-  const muted = resolved.muted === undefined ? true : resolved.muted !== false;
+  // A scene MAY author `muted` explicitly (a boolean) — that wins locally. When
+  // the scene leaves it unset, defer to the host (`LivePeerVideo` uses
+  // `runtime.liveAudio`) : muted on a preview/editor host, un-muted only on the
+  // flux réellement diffusé/enregistré. Non-regression : with no `liveAudio`
+  // host this still resolves to muted, exactly as before.
+  const muted = typeof resolved.muted === "boolean" ? resolved.muted : undefined;
 
   return <LivePeerVideo peerLabel={peerLabel} objectFit={objectFit} muted={muted} />;
 }
