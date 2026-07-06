@@ -74,6 +74,21 @@ export function LivePeerVideo({
     };
   }, [stream]);
 
+  // Autoplay policy : Chromium's headless CEF (Pulsar) has NO user gesture, so a
+  // `<video autoPlay>` that is NON-muted at first render has its internal
+  // `.play()` REJECTED silently — the element freezes, not a single frame paints.
+  // The element therefore ALWAYS renders `muted` (JSX below is hard `true`) so
+  // autoplay is always permitted ; we flip `el.muted` to the wanted value
+  // imperatively once the element exists. Un-muting an element that is ALREADY
+  // playing is NOT blocked by the autoplay policy (unlike a first `.play()` on a
+  // non-muted element). Re-runs on `isMuted` change so a live `liveAudio` toggle
+  // is reflected without re-rendering the element (which would restart autoplay).
+  useEffect(() => {
+    const el = videoRef.current;
+    if (el === null) return;
+    el.muted = isMuted;
+  }, [isMuted, stream]);
+
   if (stream === null) {
     // Stream-less box of the wrapper geometry — transparent, inert, paints
     // nothing. NOT an error : the peer can connect mid-show.
@@ -91,7 +106,11 @@ export function LivePeerVideo({
       ref={videoRef}
       data-lumencast-media-live
       autoPlay
-      muted={isMuted}
+      // ALWAYS muted at first render so Chromium's autoplay policy permits
+      // playback with no user gesture (headless CEF). NEVER drive this from
+      // `isMuted` — the real mute state is applied imperatively via the effect
+      // above once the element is playing. See the effect's comment.
+      muted
       playsInline
       style={{
         width: "100%",
