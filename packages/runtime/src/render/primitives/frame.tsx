@@ -6,6 +6,7 @@ import { backgroundsToCss, parseFills, gateImageFills } from "../fill";
 import { parseCssColor, warnRejectedColor } from "../css-color";
 import { emitDiagnostic } from "../diagnostics";
 import { useAllowedHosts } from "../allowed-hosts";
+import { clampFilterChannel, clampSymmetricChannel } from "../filter-clamp";
 
 /** Absolute-positioned container with size + transform + opacity.
  *  Animatable on `transform` and `opacity` only — width/height/position
@@ -185,10 +186,15 @@ function buildShadows(value: unknown, nodeId?: string): { filter?: string; boxSh
       warnRejectedColor("frame.shadow.color", nodeId);
       continue;
     }
-    const x = numberOr(spec.x, 0);
-    const y = numberOr(spec.y, 0);
-    const blur = numberOr(spec.blur, 0);
-    const spread = numberOr(spec.spread, 0);
+    // R8 runtime gate (ADR 014 R2/R8) — ``shadow[]`` is wire-drivable (a
+    // static bundle prop OR a live LSDP delta bypassing the compiler's
+    // clamp), so re-validate and re-clamp here too. Non-finite falls back
+    // to 0 (``clampFilterChannel``/``clampSymmetricChannel`` return
+    // ``null`` on non-finite input) rather than reaching CSS unbounded.
+    const x = clampSymmetricChannel("shadowOffset", numberOr(spec.x, 0)) ?? 0;
+    const y = clampSymmetricChannel("shadowOffset", numberOr(spec.y, 0)) ?? 0;
+    const blur = clampFilterChannel("blur", numberOr(spec.blur, 0)) ?? 0;
+    const spread = clampSymmetricChannel("shadowSpread", numberOr(spec.spread, 0)) ?? 0;
     const inset = spec.inset === true;
     if (!inset && spread === 0) {
       dropParts.push(`drop-shadow(${x}px ${y}px ${blur / 2}px ${color})`);

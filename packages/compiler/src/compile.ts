@@ -82,6 +82,19 @@ export const MAX_FILTER_BLUR_PX = 100;
 /** Max CSS `brightness()` factor emitted by the compiler (spec §6.1
  *  explicitly blesses clamping to 4). */
 export const MAX_FILTER_BRIGHTNESS = 4;
+// Static blur/shadow/backdrop-blur clamps (ADR 014 R2/R8, Prism issue #354 —
+// the STATIC counterpart to the filter clamps above : `node.blur` /
+// `node.backdropBlur` / `node.shadow[]` are author-declared props, not
+// animated `filter` values, so `lowerFilter` never sees them — they were
+// passed through verbatim until this cap (Bastion review).
+/** Max px radius for `node.blur` / `node.backdropBlur` / a shadow's own
+ *  `blur`, mirroring `MAX_FILTER_BLUR_PX`. */
+export const MAX_STATIC_BLUR_PX = 100;
+/** Max px magnitude for a shadow's `spread`. No natural upper bound in the
+ *  authoring model ; generous but bounded. */
+export const MAX_SHADOW_SPREAD_PX = 1000;
+/** Max px magnitude for a shadow's `x`/`y` offset. */
+export const MAX_SHADOW_OFFSET_PX = 4096;
 // Path caps — `d` strings are untrusted author input rendered into SVG.
 /** Max size of a single subpath `d` string (8 KiB, RC#10). */
 export const MAX_PATH_SUBPATH_BYTES = 8192;
@@ -151,6 +164,7 @@ const COMMON_NODE_KEYS: ReadonlySet<string> = new Set([
   "rotation",
   "flipY",
   "blur",
+  "backdropBlur",
   "shadow",
   "sizing",
   "position",
@@ -539,8 +553,15 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
   if (node.opacity !== undefined) props["opacity"] = node.opacity;
   if (node.rotation !== undefined) props["rotation"] = node.rotation;
   if (node.flipY !== undefined) props["flipY"] = node.flipY;
-  if (node.blur !== undefined) props["blur"] = node.blur;
-  if (node.shadow !== undefined) props["shadow"] = node.shadow;
+  if (node.blur !== undefined) {
+    props["blur"] = clampStaticBlur(node.blur, node.id, "blur", opts);
+  }
+  if (node.backdropBlur !== undefined) {
+    props["backdropBlur"] = clampStaticBlur(node.backdropBlur, node.id, "backdropBlur", opts);
+  }
+  if (node.shadow !== undefined) {
+    props["shadow"] = lowerStaticShadow(node.shadow, node.id, opts);
+  }
   if (node.sizing !== undefined) props["sizing"] = node.sizing;
   if (node.position !== undefined && props["x"] === undefined && props["y"] === undefined) {
     // Frame's case above already sets x/y from `position` ; the universal
@@ -1016,6 +1037,72 @@ function lowerFilter(
     }
   }
   return `blur(${blur}px) brightness(${brightness})`;
+}
+
+// --- static blur/backdrop-blur/shadow clamping (ADR 014 R2/R8) --------
+
+/** Clamp a static blur-radius-like field (`node.blur`, `node.backdropBlur`,
+ *  a shadow entry's `blur`) to `[0, MAX_STATIC_BLUR_PX]`. Unlike
+ *  `lowerFilter`'s animated channel, these are author-declared props that
+ *  can also arrive via untrusted imported input (Prism ADR 014) — soft
+ *  clamp + warn, not a hard throw, so an out-of-range authored scene still
+ *  compiles (degrades to the cap) rather than failing the whole bundle. */
+function clampStaticBlur(
+  v: number,
+  nodeId: string | undefined,
+  field: string,
+  opts: CompileOptions,
+): number {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+    warn(opts, nodeId, field, "not a finite number >= 0 — dropped to 0 (R8)");
+    return 0;
+  }
+  if (v > MAX_STATIC_BLUR_PX) {
+    warn(opts, nodeId, field, `clamped to the ${MAX_STATIC_BLUR_PX}px cap (R8)`);
+    return MAX_STATIC_BLUR_PX;
+  }
+  return v;
+}
+
+/** Clamp a shadow offset (`x`/`y`) or `spread` magnitude to `[-max, max]`. */
+function clampShadowMagnitude(
+  v: number,
+  max: number,
+  nodeId: string | undefined,
+  field: string,
+  opts: CompileOptions,
+): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) {
+    warn(opts, nodeId, field, "not a finite number — dropped to 0 (R8)");
+    return 0;
+  }
+  if (v > max) {
+    warn(opts, nodeId, field, `clamped to +${max} (R8)`);
+    return max;
+  }
+  if (v < -max) {
+    warn(opts, nodeId, field, `clamped to -${max} (R8)`);
+    return -max;
+  }
+  return v;
+}
+
+/** Lower `node.shadow[]` with every numeric field clamped (R8/R2) — the
+ *  compiler's only gate on this field ; the runtime mirrors these same
+ *  caps (`filter-clamp.ts`) for the live-delta path. */
+function lowerStaticShadow(
+  shadow: NonNullable<LSMLNode["shadow"]>,
+  nodeId: string | undefined,
+  opts: CompileOptions,
+): NonNullable<LSMLNode["shadow"]> {
+  return shadow.map((s, i) => ({
+    ...(s.inset === true ? { inset: true } : {}),
+    color: s.color,
+    x: clampShadowMagnitude(s.x, MAX_SHADOW_OFFSET_PX, nodeId, `shadow[${i}].x`, opts),
+    y: clampShadowMagnitude(s.y, MAX_SHADOW_OFFSET_PX, nodeId, `shadow[${i}].y`, opts),
+    blur: clampStaticBlur(s.blur, nodeId, `shadow[${i}].blur`, opts),
+    spread: clampShadowMagnitude(s.spread, MAX_SHADOW_SPREAD_PX, nodeId, `shadow[${i}].spread`, opts),
+  }));
 }
 
 // --- keyframes lowering (LSML §6.6 → runtime Keyframes shape) ----------

@@ -22,6 +22,9 @@ import {
   validatePathData,
   MAX_FILTER_BLUR_PX,
   MAX_FILTER_BRIGHTNESS,
+  MAX_STATIC_BLUR_PX,
+  MAX_SHADOW_SPREAD_PX,
+  MAX_SHADOW_OFFSET_PX,
   MAX_PATH_SUBPATHS,
   MAX_PATH_SUBPATH_BYTES,
   MAX_PATH_COMMANDS,
@@ -368,6 +371,72 @@ describe("filter clamps — exact boundary values (R8)", () => {
     }
     expect(message).not.toContain("malicious-string-abc");
     expect(message).toContain('"f"');
+  });
+});
+
+describe("static blur/backdropBlur/shadow clamps — ADR 014 R2/R8 (Prism issue #354/#355)", () => {
+  function compileStatic(node: Partial<LSMLNode>, warns: string[] = []) {
+    const out = compileBundle(
+      bundle({
+        kind: "frame",
+        id: "f",
+        size: { w: 1, h: 1 },
+        ...node,
+      } as LSMLNode),
+      { onWarn: (m) => warns.push(m) },
+    );
+    return out.root.props ?? {};
+  }
+
+  it("passes in-range node.blur / node.backdropBlur through unchanged, no warn", () => {
+    const warns: string[] = [];
+    const props = compileStatic({ blur: 12, backdropBlur: 8 } as never, warns);
+    expect(props.blur).toBe(12);
+    expect(props.backdropBlur).toBe(8);
+    expect(warns).toEqual([]);
+  });
+
+  it(`clamps node.blur / node.backdropBlur to ${MAX_STATIC_BLUR_PX}px, warns (soft — not a throw)`, () => {
+    const warns: string[] = [];
+    const props = compileStatic({ blur: 1e6, backdropBlur: 1e6 } as never, warns);
+    expect(props.blur).toBe(MAX_STATIC_BLUR_PX);
+    expect(props.backdropBlur).toBe(MAX_STATIC_BLUR_PX);
+    expect(warns.some((w) => w.includes("blur") && w.includes("clamped"))).toBe(true);
+    expect(warns.some((w) => w.includes("backdropBlur") && w.includes("clamped"))).toBe(true);
+  });
+
+  it("drops non-finite / negative node.blur to 0 with a warning, does not throw", () => {
+    const warns: string[] = [];
+    const props = compileStatic({ blur: Number.NaN }, warns);
+    expect(props.blur).toBe(0);
+    expect(warns.some((w) => w.includes("blur"))).toBe(true);
+  });
+
+  it("clamps every numeric field of a shadow[] entry (x/y/spread symmetric, blur one-sided)", () => {
+    const warns: string[] = [];
+    const props = compileStatic(
+      {
+        shadow: [{ x: 1e6, y: -1e6, blur: 1e6, spread: 1e6, color: "#000000" }],
+      } as never,
+      warns,
+    );
+    expect(props.shadow).toEqual([
+      { color: "#000000", x: MAX_SHADOW_OFFSET_PX, y: -MAX_SHADOW_OFFSET_PX, blur: MAX_STATIC_BLUR_PX, spread: MAX_SHADOW_SPREAD_PX },
+    ]);
+    expect(warns.length).toBeGreaterThan(0);
+  });
+
+  it("preserves inset:true and passes a shadow with in-range values through unchanged", () => {
+    const props = compileStatic({
+      shadow: [{ inset: true, x: 1, y: 2, blur: 3, spread: 0, color: "#fff" }],
+    } as never);
+    expect(props.shadow).toEqual([{ inset: true, color: "#fff", x: 1, y: 2, blur: 3, spread: 0 }]);
+  });
+
+  it("R9 — clamp warnings on shadow fields do not echo the offending value", () => {
+    const warns: string[] = [];
+    compileStatic({ shadow: [{ x: 123456789, y: 0, blur: 0, spread: 0, color: "#000" }] } as never, warns);
+    expect(warns.join(" ")).not.toContain("123456789");
   });
 });
 

@@ -33,12 +33,20 @@ export const MAX_FILTER_BRIGHTNESS = 4;
 
 const MAX_FILTER_STRING_LEN = 64;
 
+/** Max px magnitude for a static `node.shadow[]` entry's `spread`
+ *  (ADR 014 R2/R8, mirrors the compiler's `MAX_SHADOW_SPREAD_PX`). */
+export const MAX_SHADOW_SPREAD_PX = 1000;
+/** Max px magnitude for a static `node.shadow[]` entry's `x`/`y` offset
+ *  (mirrors the compiler's `MAX_SHADOW_OFFSET_PX`). */
+export const MAX_SHADOW_OFFSET_PX = 4096;
+
 const CAPS: Record<FilterChannel, number> = {
   blur: MAX_FILTER_BLUR_PX,
   brightness: MAX_FILTER_BRIGHTNESS,
+  backdropBlur: MAX_FILTER_BLUR_PX,
 };
 
-export type FilterChannel = "blur" | "brightness";
+export type FilterChannel = "blur" | "brightness" | "backdropBlur";
 
 /**
  * Gate one live numeric filter channel (R8 runtime half).
@@ -53,6 +61,26 @@ export function clampFilterChannel(channel: FilterChannel, value: unknown): numb
   if (value < 0 || Object.is(value, -0)) return null;
   const cap = CAPS[channel];
   return value > cap ? cap : value;
+}
+
+/** Symmetric channel — `node.shadow[]`'s `x`/`y`/`spread` (ADR 014 R2/R8).
+ *  Unlike `blur`/`backdropBlur`, these are legitimately signed (a negative
+ *  spread shrinks the shadow, an offset can point either way) — clamps to
+ *  `[-max, max]` instead of rejecting negatives. Returns `null` only for
+ *  non-finite input. */
+export type SymmetricChannel = "shadowSpread" | "shadowOffset";
+
+const SYMMETRIC_CAPS: Record<SymmetricChannel, number> = {
+  shadowSpread: MAX_SHADOW_SPREAD_PX,
+  shadowOffset: MAX_SHADOW_OFFSET_PX,
+};
+
+export function clampSymmetricChannel(channel: SymmetricChannel, value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const cap = SYMMETRIC_CAPS[channel];
+  if (value > cap) return cap;
+  if (value < -cap) return -cap;
+  return value;
 }
 
 // The ONLY string form the compiler ever emits (`lowerFilter`) :

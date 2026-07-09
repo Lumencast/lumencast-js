@@ -262,6 +262,10 @@ export interface LSMLBaseNode {
   flipY?: boolean;
   /** Figma LAYER_BLUR radius (px) → CSS `filter: blur()`. */
   blur?: number;
+  /** Figma BACKGROUND_BLUR radius (px) → CSS `backdrop-filter: blur()`
+   *  (ADR 014 Tier B, Prism issue #355). Unlike `blur`, this blurs what's
+   *  BEHIND the node rather than the node's own pixels. */
+  backdropBlur?: number;
   /** Figma DROP_SHADOW / INNER_SHADOW → CSS `box-shadow` / `filter: drop-shadow`.
    *  Each layer is `{ inset?, color, x, y, blur, spread }` (colour strict-parsed
    *  runtime-side, RC#11). The picto square's depth halo + orange/red inner rim. */

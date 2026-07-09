@@ -26,6 +26,7 @@
 import type { ReactNode, CSSProperties } from "react";
 
 import { parseBlendMode } from "./blend-mode";
+import { clampFilterChannel } from "./filter-clamp";
 
 export type SizingMode = "fixed" | "hug" | "fill";
 
@@ -40,6 +41,10 @@ export interface UniversalProps {
   flipY?: boolean;
   /** Figma LAYER_BLUR radius (px) → CSS `filter: blur()`. */
   blur?: number;
+  /** Figma BACKGROUND_BLUR radius (px) → CSS `backdrop-filter: blur()`
+   *  (ADR 014 Tier B). Blurs what's BEHIND the node, not its own pixels —
+   *  needs the node to have some transparency to show any effect. */
+  backdropBlur?: number;
   sizing?: { x?: SizingMode; y?: SizingMode };
   /** ADR 002 §3.1 (D1) — parent-relative absolute placement. When set,
    *  the wrapper pins the primitive at `left:x; top:y` (position:absolute)
@@ -95,6 +100,7 @@ export function UniversalWrapper({
   rotation,
   flipY,
   blur,
+  backdropBlur,
   sizing,
   position,
   size,
@@ -110,6 +116,11 @@ export function UniversalWrapper({
   // CSS `mix-blend-mode` keyword ; anything else is `undefined` and never
   // reaches the style (no free CSS string, no passthrough).
   const mixBlendMode = parseBlendMode(blendMode);
+  // R8 runtime gate (ADR 014 R2/R8) — a static `blur`/`backdropBlur` can
+  // reach here from a live LSDP delta that bypassed the compiler's clamp
+  // entirely ; re-validate and re-clamp, never trust the raw prop.
+  const clampedBlur = clampFilterChannel("blur", blur);
+  const clampedBackdropBlur = clampFilterChannel("backdropBlur", backdropBlur);
   // No-op fast path — when no universal props are set, render children
   // directly. Lets simple bundles avoid an extra DOM node per primitive.
   // A child WITHOUT `position` never enters the absolute branch, so the
@@ -118,7 +129,8 @@ export function UniversalWrapper({
   const hasOpacity = typeof opacity === "number" && opacity !== 1;
   const hasRotation = typeof rotation === "number" && rotation !== 0;
   const hasFlipY = flipY === true;
-  const hasBlur = typeof blur === "number" && blur > 0;
+  const hasBlur = clampedBlur !== null && clampedBlur > 0;
+  const hasBackdropBlur = clampedBackdropBlur !== null && clampedBackdropBlur > 0;
   const hasSizing = sizing?.x !== undefined || sizing?.y !== undefined;
   const hasPosition = position !== undefined;
   const hasBlendMode = mixBlendMode !== undefined;
@@ -127,6 +139,7 @@ export function UniversalWrapper({
     !hasRotation &&
     !hasFlipY &&
     !hasBlur &&
+    !hasBackdropBlur &&
     !hasSizing &&
     !hasPosition &&
     !hasBlendMode
@@ -149,7 +162,12 @@ export function UniversalWrapper({
   // deficit vs the Figma PNG ; it measured WORSE — the deficit is in the high-R
   // channel, which is gamma-INVARIANT — and supersampling the render closed that
   // corner anyway. The Chromium(sRGB)≠Figma(linearRGB) blur gap is else irreducible.)
-  const filter = hasBlur ? `blur(${blur / 2}px)` : undefined;
+  const filter = hasBlur ? `blur(${clampedBlur / 2}px)` : undefined;
+  // Figma BACKGROUND_BLUR → CSS `backdrop-filter`. Blurs whatever composites
+  // BEHIND this box, not the box's own pixels — a fully opaque node shows no
+  // visible effect (there's no backdrop to blur through). Same halving as
+  // `blur` above for consistency, not independently measured.
+  const backdropFilterCss = hasBackdropBlur ? `blur(${clampedBackdropBlur / 2}px)` : undefined;
 
   const sizingFlex = hasSizing ? sizingToFlex(sizing) : undefined;
 
@@ -158,10 +176,15 @@ export function UniversalWrapper({
   // `filter` each force the element into its own group, so the blend would fold
   // over a TRANSPARENT backdrop instead — the caramel hard-light then shows the
   // raw blue wave rather than compositing over the warm gradient, a screen layer
-  // silently no-ops. When the node needs BOTH a blend and one of those, SPLIT:
-  // the blend (+ absolute placement) lives on the OUTER box, the isolating
-  // transform/opacity/blur on an INNER box that carries the sized content.
-  if (hasBlendMode && (hasOpacity || transform !== undefined || filter !== undefined)) {
+  // silently no-ops. `backdrop-filter` forms its own stacking context the same
+  // way, so it joins the split condition. When the node needs BOTH a blend and
+  // one of those, SPLIT: the blend (+ absolute placement) lives on the OUTER
+  // box, the isolating transform/opacity/filter/backdrop-filter on an INNER
+  // box that carries the sized content.
+  if (
+    hasBlendMode &&
+    (hasOpacity || transform !== undefined || filter !== undefined || backdropFilterCss !== undefined)
+  ) {
     const outer: CSSProperties = { mixBlendMode: mixBlendMode as CSSProperties["mixBlendMode"] };
     if (hasPosition) {
       outer.position = "absolute";
@@ -175,6 +198,10 @@ export function UniversalWrapper({
     if (hasOpacity) inner.opacity = opacity;
     if (transform !== undefined) inner.transform = transform;
     if (filter !== undefined) inner.filter = filter;
+    if (backdropFilterCss !== undefined) {
+      inner.backdropFilter = backdropFilterCss;
+      inner.WebkitBackdropFilter = backdropFilterCss;
+    }
     return (
       <div style={outer}>
         <div style={inner}>{children}</div>
@@ -186,6 +213,10 @@ export function UniversalWrapper({
   if (hasOpacity) style.opacity = opacity;
   if (transform !== undefined) style.transform = transform;
   if (filter !== undefined) style.filter = filter;
+  if (backdropFilterCss !== undefined) {
+    style.backdropFilter = backdropFilterCss;
+    style.WebkitBackdropFilter = backdropFilterCss;
+  }
   if (hasBlendMode) style.mixBlendMode = mixBlendMode as CSSProperties["mixBlendMode"];
   // ADR 002 §3.1 (D1) — absolute placement relative to the nearest positioned
   // ancestor. `size` (when present) fixes the box ; otherwise it hugs content.
