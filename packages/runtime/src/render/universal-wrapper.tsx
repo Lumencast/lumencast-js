@@ -26,7 +26,13 @@
 import type { ReactNode, CSSProperties } from "react";
 
 import { parseBlendMode } from "./blend-mode";
-import { clampFilterChannel } from "./filter-clamp";
+import { clampFilterChannel, clampUnitInterval } from "./filter-clamp";
+import {
+  EffectOverlays,
+  type NoiseProps,
+  type TextureProps,
+  type GlassProps,
+} from "./effect-overlays";
 
 export type SizingMode = "fixed" | "hug" | "fill";
 
@@ -45,6 +51,14 @@ export interface UniversalProps {
    *  (ADR 014 Tier B). Blurs what's BEHIND the node, not its own pixels —
    *  needs the node to have some transparency to show any effect. */
   backdropBlur?: number;
+  /** Figma NOISE — see `effect-overlays.tsx` (ADR 014 Tier B). */
+  noise?: NoiseProps;
+  /** Figma TEXTURE — see `effect-overlays.tsx` (ADR 014 Tier B). */
+  texture?: TextureProps;
+  /** Figma GLASS — `radius` folds into the SAME `backdrop-filter` as
+   *  `backdropBlur` ; the rest (highlight) renders via `EffectOverlays`
+   *  (ADR 014 Tier B, see `effect-overlays.tsx`). */
+  glass?: GlassProps;
   sizing?: { x?: SizingMode; y?: SizingMode };
   /** ADR 002 §3.1 (D1) — parent-relative absolute placement. When set,
    *  the wrapper pins the primitive at `left:x; top:y` (position:absolute)
@@ -101,6 +115,9 @@ export function UniversalWrapper({
   flipY,
   blur,
   backdropBlur,
+  noise,
+  texture,
+  glass,
   sizing,
   position,
   size,
@@ -120,7 +137,16 @@ export function UniversalWrapper({
   // reach here from a live LSDP delta that bypassed the compiler's clamp
   // entirely ; re-validate and re-clamp, never trust the raw prop.
   const clampedBlur = clampFilterChannel("blur", blur);
-  const clampedBackdropBlur = clampFilterChannel("backdropBlur", backdropBlur);
+  // GLASS's `radius` rides the SAME `backdrop-filter` as `backdropBlur`
+  // (Prism editor parity, cf. effect-overlays.tsx) — sum the two clamped
+  // contributions, then re-clamp the TOTAL so two under-cap sources can't
+  // add up past MAX_FILTER_BLUR_PX either (same "clamp the sum" shape as
+  // layer-blur in from-scene.ts).
+  const clampedBackdropBlurOwn = clampFilterChannel("backdropBlur", backdropBlur);
+  const clampedGlassRadius = glass ? clampFilterChannel("backdropBlur", glass.radius) : null;
+  const backdropBlurSum = (clampedBackdropBlurOwn ?? 0) + (clampedGlassRadius ?? 0);
+  const clampedBackdropBlur =
+    backdropBlurSum > 0 ? (clampFilterChannel("backdropBlur", backdropBlurSum) ?? 0) : 0;
   // No-op fast path — when no universal props are set, render children
   // directly. Lets simple bundles avoid an extra DOM node per primitive.
   // A child WITHOUT `position` never enters the absolute branch, so the
@@ -130,7 +156,11 @@ export function UniversalWrapper({
   const hasRotation = typeof rotation === "number" && rotation !== 0;
   const hasFlipY = flipY === true;
   const hasBlur = clampedBlur !== null && clampedBlur > 0;
-  const hasBackdropBlur = clampedBackdropBlur !== null && clampedBackdropBlur > 0;
+  const hasBackdropBlur = clampedBackdropBlur > 0;
+  const hasGrain = noise !== undefined || texture !== undefined;
+  const glassIntensity = glass ? (clampUnitInterval(glass.lightIntensity) ?? 0) : 0;
+  const hasGlassHighlight = glass !== undefined && glassIntensity > 0;
+  const hasOverlays = hasGrain || hasGlassHighlight;
   const hasSizing = sizing?.x !== undefined || sizing?.y !== undefined;
   const hasPosition = position !== undefined;
   const hasBlendMode = mixBlendMode !== undefined;
@@ -140,6 +170,7 @@ export function UniversalWrapper({
     !hasFlipY &&
     !hasBlur &&
     !hasBackdropBlur &&
+    !hasOverlays &&
     !hasSizing &&
     !hasPosition &&
     !hasBlendMode
@@ -205,9 +236,18 @@ export function UniversalWrapper({
       inner.backdropFilter = backdropFilterCss;
       inner.WebkitBackdropFilter = backdropFilterCss;
     }
+    // NOISE/TEXTURE/GLASS-highlight paint as extra siblings stacked AFTER
+    // `children`, absolutely positioned to cover the node — this inner box
+    // is their containing block (it already isolates via filter/opacity/
+    // transform/backdrop-filter above, so `position: relative` here never
+    // regresses the isolation the blend-split comment above explains).
+    if (hasOverlays) inner.position = "relative";
     return (
       <div style={outer}>
-        <div style={inner}>{children}</div>
+        <div style={inner}>
+          {children}
+          {hasOverlays && <EffectOverlays noise={noise} texture={texture} glass={glass} />}
+        </div>
       </div>
     );
   }
@@ -229,8 +269,20 @@ export function UniversalWrapper({
     style.top = position.y;
     if (typeof size?.w === "number") style.width = size.w;
     if (typeof size?.h === "number") style.height = size.h;
+  } else if (hasOverlays) {
+    // NOISE/TEXTURE/GLASS-highlight need a containing block for their
+    // `position: absolute; inset: 0` overlay siblings — `position` above
+    // already establishes one via `absolute` ; this box has none of the
+    // other isolating properties (opacity/transform/filter), so it needs
+    // its own `relative`.
+    style.position = "relative";
   }
   if (sizingFlex !== undefined) style.flex = sizingFlex;
 
-  return <div style={style}>{children}</div>;
+  return (
+    <div style={style}>
+      {children}
+      {hasOverlays && <EffectOverlays noise={noise} texture={texture} glass={glass} />}
+    </div>
+  );
 }

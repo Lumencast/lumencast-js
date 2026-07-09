@@ -25,6 +25,7 @@ import {
   MAX_STATIC_BLUR_PX,
   MAX_SHADOW_SPREAD_PX,
   MAX_SHADOW_OFFSET_PX,
+  MAX_NOISE_SIZE_PX,
   MAX_PATH_SUBPATHS,
   MAX_PATH_SUBPATH_BYTES,
   MAX_PATH_COMMANDS,
@@ -446,6 +447,156 @@ describe("static blur/backdropBlur/shadow clamps — ADR 014 R2/R8 (Prism issue 
       warns,
     );
     expect(warns.join(" ")).not.toContain("123456789");
+  });
+
+  it("passes in-range noise/texture/glass through unchanged, no warn", () => {
+    const warns: string[] = [];
+    const props = compileStatic(
+      {
+        noise: {
+          noiseSize: 4,
+          noiseType: "DUOTONE",
+          density: 0.5,
+          color: { r: 1, g: 0, b: 0, a: 1 },
+        },
+        texture: { radius: 10, noiseSize: 4, clipToShape: true },
+        glass: {
+          radius: 8,
+          refraction: 0.5,
+          depth: 0.5,
+          lightAngle: 45,
+          lightIntensity: 0.6,
+          dispersion: 0.2,
+          splay: 0.3,
+        },
+      } as never,
+      warns,
+    );
+    expect(props.noise).toEqual({
+      noiseSize: 4,
+      noiseType: "DUOTONE",
+      density: 0.5,
+      color: { r: 1, g: 0, b: 0, a: 1 },
+    });
+    expect(props.texture).toEqual({ radius: 10, noiseSize: 4, clipToShape: true });
+    expect(props.glass).toEqual({
+      radius: 8,
+      refraction: 0.5,
+      depth: 0.5,
+      lightAngle: 45,
+      lightIntensity: 0.6,
+      dispersion: 0.2,
+      splay: 0.3,
+    });
+    expect(warns).toEqual([]);
+  });
+
+  it(`clamps noise.noiseSize / texture.noiseSize / texture.radius to ${MAX_NOISE_SIZE_PX}px`, () => {
+    const warns: string[] = [];
+    const props = compileStatic(
+      {
+        noise: { noiseSize: 1e9, noiseType: "MONOTONE", density: 0.5 },
+        texture: { radius: 1e9, noiseSize: 1e9 },
+      } as never,
+      warns,
+    );
+    expect(props.noise?.noiseSize).toBe(MAX_NOISE_SIZE_PX);
+    expect(props.texture?.radius).toBe(MAX_NOISE_SIZE_PX);
+    expect(props.texture?.noiseSize).toBe(MAX_NOISE_SIZE_PX);
+    expect(warns.length).toBeGreaterThan(0);
+  });
+
+  it("clamps noiseSizeVector axes independently", () => {
+    const props = compileStatic({
+      noise: {
+        noiseSize: 1,
+        noiseType: "MONOTONE",
+        density: 0.5,
+        noiseSizeVector: { x: -5, y: 1e9 },
+      },
+    } as never);
+    expect(props.noise?.noiseSizeVector).toEqual({ x: 0, y: MAX_NOISE_SIZE_PX });
+  });
+
+  it("clamps every unit-interval field of noise/glass to [0,1] (density, color channels, refraction/depth/dispersion/splay/lightIntensity)", () => {
+    const props = compileStatic({
+      noise: {
+        noiseSize: 1,
+        noiseType: "DUOTONE",
+        density: 5,
+        color: { r: -1, g: 2, b: 0.5, a: -0.5 },
+        secondaryColor: { r: 1, g: 1, b: 1, a: 2 },
+      },
+      glass: {
+        radius: 1e9,
+        refraction: -1,
+        depth: 2,
+        lightAngle: 0,
+        lightIntensity: -5,
+        dispersion: 5,
+        splay: -0.1,
+      },
+    } as never);
+    expect(props.noise?.density).toBe(1);
+    expect(props.noise?.color).toEqual({ r: 0, g: 1, b: 0.5, a: 0 });
+    expect(props.noise?.secondaryColor).toEqual({ r: 1, g: 1, b: 1, a: 1 });
+    expect(props.glass?.radius).toBe(MAX_STATIC_BLUR_PX);
+    expect(props.glass?.refraction).toBe(0);
+    expect(props.glass?.depth).toBe(1);
+    expect(props.glass?.lightIntensity).toBe(0);
+    expect(props.glass?.dispersion).toBe(1);
+    expect(props.glass?.splay).toBe(0);
+  });
+
+  it("normalises glass.lightAngle into [0, 360) instead of clamping (it's a wrapping angle, not a magnitude)", () => {
+    expect(
+      compileStatic({
+        glass: {
+          radius: 1,
+          refraction: 0,
+          depth: 0,
+          lightAngle: 400,
+          lightIntensity: 0,
+          dispersion: 0,
+          splay: 0,
+        },
+      } as never).glass?.lightAngle,
+    ).toBe(40);
+    expect(
+      compileStatic({
+        glass: {
+          radius: 1,
+          refraction: 0,
+          depth: 0,
+          lightAngle: -30,
+          lightIntensity: 0,
+          dispersion: 0,
+          splay: 0,
+        },
+      } as never).glass?.lightAngle,
+    ).toBe(330);
+    expect(
+      compileStatic({
+        glass: {
+          radius: 1,
+          refraction: 0,
+          depth: 0,
+          lightAngle: Number.NaN,
+          lightIntensity: 0,
+          dispersion: 0,
+          splay: 0,
+        },
+      } as never).glass?.lightAngle,
+    ).toBe(0);
+  });
+
+  it("R9 — clamp warnings on noise/glass fields do not echo the offending value", () => {
+    const warns: string[] = [];
+    compileStatic(
+      { noise: { noiseSize: 987654321, noiseType: "MONOTONE", density: 0.5 } } as never,
+      warns,
+    );
+    expect(warns.join(" ")).not.toContain("987654321");
   });
 });
 

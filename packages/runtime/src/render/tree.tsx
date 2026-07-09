@@ -9,7 +9,7 @@ import type { Transition } from "../animate/transitions";
 import { PRIMITIVES } from "./primitives";
 import { PathScopeProvider, scopedPath, usePathScope } from "./scope";
 import type { RenderNode } from "./bundle";
-import { UniversalWrapper, type SizingMode } from "./universal-wrapper";
+import { UniversalWrapper, type SizingMode, type UniversalProps } from "./universal-wrapper";
 import { KeyframePlayer } from "./keyframe-player";
 import { StaggerContext, computeStaggerDelayMs } from "./stagger-context";
 import { useBindAnimate } from "./bind-animate";
@@ -145,6 +145,24 @@ function Node({ node, store }: TreeProps): ReactNode {
     // (frame.tsx) ; non-frames carry it on the wrapper, composed with rotation.
     flipY: node.kind === "frame" ? undefined : resolved.flipY === true,
     blur: typeof resolved.blur === "number" ? resolved.blur : undefined,
+    // ADR 014 Tier B (issue #355) — backdropBlur/noise/texture/glass are
+    // consumed by the wrapper (CSS backdrop-filter / EffectOverlays), same
+    // shape-narrowing rigor as `mask` below (full field validation lives in
+    // the wrapper/EffectOverlays' own clamps, R8 — a malformed object here
+    // degrades to "no effect", never an unbounded value reaching CSS).
+    backdropBlur: typeof resolved.backdropBlur === "number" ? resolved.backdropBlur : undefined,
+    noise:
+      typeof resolved.noise === "object" && resolved.noise !== null
+        ? (resolved.noise as UniversalProps["noise"])
+        : undefined,
+    texture:
+      typeof resolved.texture === "object" && resolved.texture !== null
+        ? (resolved.texture as UniversalProps["texture"])
+        : undefined,
+    glass:
+      typeof resolved.glass === "object" && resolved.glass !== null
+        ? (resolved.glass as UniversalProps["glass"])
+        : undefined,
     sizing: extractSizing(resolved.sizing),
     position: node.kind === "frame" ? undefined : extractPosition(resolved),
     size: node.kind === "frame" ? undefined : extractSize(resolved),

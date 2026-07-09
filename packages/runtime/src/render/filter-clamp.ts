@@ -39,14 +39,18 @@ export const MAX_SHADOW_SPREAD_PX = 1000;
 /** Max px magnitude for a static `node.shadow[]` entry's `x`/`y` offset
  *  (mirrors the compiler's `MAX_SHADOW_OFFSET_PX`). */
 export const MAX_SHADOW_OFFSET_PX = 4096;
+/** Max px for `node.noise.noiseSize` / `node.texture.{noiseSize,radius}`
+ *  (ADR 014 Tier B, mirrors the compiler's `MAX_NOISE_SIZE_PX`). */
+export const MAX_NOISE_SIZE_PX = 2000;
 
 const CAPS: Record<FilterChannel, number> = {
   blur: MAX_FILTER_BLUR_PX,
   brightness: MAX_FILTER_BRIGHTNESS,
   backdropBlur: MAX_FILTER_BLUR_PX,
+  noiseSize: MAX_NOISE_SIZE_PX,
 };
 
-export type FilterChannel = "blur" | "brightness" | "backdropBlur";
+export type FilterChannel = "blur" | "brightness" | "backdropBlur" | "noiseSize";
 
 /**
  * Gate one live numeric filter channel (R8 runtime half).
@@ -81,6 +85,26 @@ export function clampSymmetricChannel(channel: SymmetricChannel, value: unknown)
   if (value > cap) return cap;
   if (value < -cap) return -cap;
   return value;
+}
+
+/** Clamp a unit-interval value (`node.noise.density`, `node.glass.*`, a
+ *  noise tint's r/g/b/a channel — ADR 014 Tier B) to `[0, 1]`. Returns
+ *  `null` only for non-finite / non-number input ; unlike
+ *  `clampFilterChannel` it does NOT reject negatives, it clamps them to 0
+ *  (there's no "identity" fallback semantics needed for a 0..1 fraction). */
+export function clampUnitInterval(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+/** Normalise a degree value into `[0, 360)` (`node.glass.lightAngle`).
+ *  Not a DoS vector (feeds a CSS gradient angle) — wraps rather than
+ *  rejecting ; non-finite/non-number falls back to 0. */
+export function normalizeDegrees(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return ((value % 360) + 360) % 360;
 }
 
 // The ONLY string form the compiler ever emits (`lowerFilter`) :

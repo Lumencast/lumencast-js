@@ -277,6 +277,45 @@ export interface LSMLBaseNode {
     blur: number;
     spread: number;
   }>;
+  /** Figma 2024 NOISE — fine-grain procedural noise overlay (ADR 014 Tier B,
+   *  Prism issue #355). No CSS primitive ; approximated at render via SVG
+   *  `<feTurbulence>` tinted/blended over the node (same approximation as
+   *  the Prism editor's `effect-overlays.tsx`, not pixel-parity with Figma). */
+  noise?: {
+    noiseSize: number;
+    noiseSizeVector?: { x: number; y: number };
+    noiseType: "MONOTONE" | "MULTITONE" | "DUOTONE";
+    density: number;
+    /** RGBA 0..1. */
+    color?: { r: number; g: number; b: number; a: number };
+    /** RGBA 0..1 — only meaningful for MULTITONE / DUOTONE. */
+    secondaryColor?: { r: number; g: number; b: number; a: number };
+  };
+  /** Figma 2024 TEXTURE — procedural textured surface. Renders as a
+   *  coarser, grayscale, multiply-blended read of the same turbulence
+   *  overlay as `noise` ; `radius` round-trips only (no CSS equivalent),
+   *  same fidelity as the Prism editor. */
+  texture?: {
+    radius: number;
+    noiseSize: number;
+    noiseSizeVector?: { x: number; y: number };
+    clipToShape?: boolean;
+  };
+  /** Figma 2024 GLASS — refraction / depth / dispersion. CSS can't bend
+   *  what's behind a layer, so only `radius` (folded into the same
+   *  `backdrop-filter` blur as `backdropBlur`) and a directional highlight
+   *  (`lightAngle` / `lightIntensity` / `splay`) are rendered ; `refraction`
+   *  / `depth` / `dispersion` round-trip only — same fidelity as the Prism
+   *  editor's `effect-overlays.tsx`. */
+  glass?: {
+    radius: number;
+    refraction: number;
+    depth: number;
+    lightAngle: number;
+    lightIntensity: number;
+    dispersion: number;
+    splay: number;
+  };
   /** 1.1+ — per-axis sizing mode (LSML §5.4). */
   sizing?: { x?: "fixed" | "hug" | "fill"; y?: "fixed" | "hug" | "fill" };
   /** 1.1+ — universal position relative to parent (LSML §5.4). */

@@ -46,6 +46,19 @@ const UNIVERSAL_PROPS = [
   // ADR 002 §3.2 (#E) — a typed `mask` is lowered onto EVERY primitive by the
   // compiler and consumed by the Tree (built into a `<mask>` SVG element).
   "mask",
+  // ADR 014 (Tier A issue #354 / Tier B issue #355) — consumed universally
+  // by the wrapper : `blur`/`backdropBlur` → CSS filter/backdrop-filter,
+  // `shadow` → box-shadow/drop-shadow (frame.tsx today ; universal is L1
+  // follow-up), `noise`/`texture`/`glass` → EffectOverlays. Pre-existing gap
+  // fixed alongside noise/texture/glass : `blur`/`shadow` were already
+  // consumed by the wrapper/frame but never listed here, so every node
+  // using them was spuriously flagged as a silent drop.
+  "blur",
+  "backdropBlur",
+  "shadow",
+  "noise",
+  "texture",
+  "glass",
 ] as const;
 
 function allow(keys: readonly string[]): ReadonlySet<string> {

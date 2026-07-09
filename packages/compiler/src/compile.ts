@@ -95,6 +95,12 @@ export const MAX_STATIC_BLUR_PX = 100;
 export const MAX_SHADOW_SPREAD_PX = 1000;
 /** Max px magnitude for a shadow's `x`/`y` offset. */
 export const MAX_SHADOW_OFFSET_PX = 4096;
+// noise/texture/glass clamps (ADR 014 Tier B, Prism issue #355). No
+// natural upper bound on `noiseSize`/`radius` in the authoring model ;
+// generous but bounded, same reasoning as MAX_SHADOW_SPREAD_PX.
+/** Max px for `noise.noiseSize` / `texture.noiseSize` / `texture.radius`
+ *  and either axis of a `noiseSizeVector`. */
+export const MAX_NOISE_SIZE_PX = 2000;
 // Path caps — `d` strings are untrusted author input rendered into SVG.
 /** Max size of a single subpath `d` string (8 KiB, RC#10). */
 export const MAX_PATH_SUBPATH_BYTES = 8192;
@@ -166,6 +172,9 @@ const COMMON_NODE_KEYS: ReadonlySet<string> = new Set([
   "blur",
   "backdropBlur",
   "shadow",
+  "noise",
+  "texture",
+  "glass",
   "sizing",
   "position",
   // 1.2+ (ADR 002 §3.2) — universal blend mode + typed mask on every node.
@@ -561,6 +570,15 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
   }
   if (node.shadow !== undefined) {
     props["shadow"] = lowerStaticShadow(node.shadow, node.id, opts);
+  }
+  if (node.noise !== undefined) {
+    props["noise"] = lowerStaticNoise(node.noise, node.id, opts);
+  }
+  if (node.texture !== undefined) {
+    props["texture"] = lowerStaticTexture(node.texture, node.id, opts);
+  }
+  if (node.glass !== undefined) {
+    props["glass"] = lowerStaticGlass(node.glass, node.id, opts);
   }
   if (node.sizing !== undefined) props["sizing"] = node.sizing;
   if (node.position !== undefined && props["x"] === undefined && props["y"] === undefined) {
@@ -1109,6 +1127,187 @@ function lowerStaticShadow(
       opts,
     ),
   }));
+}
+
+// --- noise/texture/glass clamping (ADR 014 Tier B, R2/R8) --------------
+
+/** Clamp a non-negative magnitude (`noiseSize`, `radius`) to `[0, max]` —
+ *  same soft-clamp-and-warn shape as `clampStaticBlur`, generalised for a
+ *  caller-chosen cap. */
+function clampNonNegativeMagnitude(
+  v: number,
+  max: number,
+  nodeId: string | undefined,
+  field: string,
+  opts: CompileOptions,
+): number {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+    warn(opts, nodeId, field, "not a finite number >= 0 — dropped to 0 (R8)");
+    return 0;
+  }
+  if (v > max) {
+    warn(opts, nodeId, field, `clamped to the ${max}px cap (R8)`);
+    return max;
+  }
+  return v;
+}
+
+/** Clamp a unit-interval field (`density`, `lightIntensity`, `splay`,
+ *  `refraction`, `depth`, `dispersion`, a color channel) to `[0, 1]`. */
+function clampUnitInterval(
+  v: number,
+  nodeId: string | undefined,
+  field: string,
+  opts: CompileOptions,
+): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) {
+    warn(opts, nodeId, field, "not a finite number — dropped to 0 (R8)");
+    return 0;
+  }
+  if (v < 0) {
+    warn(opts, nodeId, field, "clamped to 0 (R8)");
+    return 0;
+  }
+  if (v > 1) {
+    warn(opts, nodeId, field, "clamped to 1 (R8)");
+    return 1;
+  }
+  return v;
+}
+
+/** Normalise a degree value into `[0, 360)`. Not a DoS vector (feeds a
+ *  CSS gradient angle, which already wraps) — normalised for hygiene,
+ *  non-finite falls back to 0. */
+function normalizeDegrees(v: number): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) return 0;
+  return ((v % 360) + 360) % 360;
+}
+
+type UnitColor = { r: number; g: number; b: number; a: number };
+
+/** Clamp every RGBA channel of a noise tint to `[0, 1]`. */
+function clampUnitColor(
+  c: UnitColor,
+  nodeId: string | undefined,
+  field: string,
+  opts: CompileOptions,
+): UnitColor {
+  return {
+    r: clampUnitInterval(c.r, nodeId, `${field}.r`, opts),
+    g: clampUnitInterval(c.g, nodeId, `${field}.g`, opts),
+    b: clampUnitInterval(c.b, nodeId, `${field}.b`, opts),
+    a: clampUnitInterval(c.a, nodeId, `${field}.a`, opts),
+  };
+}
+
+function clampNoiseSizeVector(
+  v: { x: number; y: number } | undefined,
+  nodeId: string | undefined,
+  field: string,
+  opts: CompileOptions,
+): { x: number; y: number } | undefined {
+  if (v === undefined) return undefined;
+  return {
+    x: clampNonNegativeMagnitude(v.x, MAX_NOISE_SIZE_PX, nodeId, `${field}.x`, opts),
+    y: clampNonNegativeMagnitude(v.y, MAX_NOISE_SIZE_PX, nodeId, `${field}.y`, opts),
+  };
+}
+
+function lowerStaticNoise(
+  noise: NonNullable<LSMLNode["noise"]>,
+  nodeId: string | undefined,
+  opts: CompileOptions,
+): NonNullable<LSMLNode["noise"]> {
+  return {
+    noiseSize: clampNonNegativeMagnitude(
+      noise.noiseSize,
+      MAX_NOISE_SIZE_PX,
+      nodeId,
+      "noise.noiseSize",
+      opts,
+    ),
+    ...(noise.noiseSizeVector !== undefined
+      ? {
+          noiseSizeVector: clampNoiseSizeVector(
+            noise.noiseSizeVector,
+            nodeId,
+            "noise.noiseSizeVector",
+            opts,
+          ),
+        }
+      : {}),
+    noiseType: noise.noiseType,
+    density: clampUnitInterval(noise.density, nodeId, "noise.density", opts),
+    ...(noise.color !== undefined
+      ? { color: clampUnitColor(noise.color, nodeId, "noise.color", opts) }
+      : {}),
+    ...(noise.secondaryColor !== undefined
+      ? {
+          secondaryColor: clampUnitColor(
+            noise.secondaryColor,
+            nodeId,
+            "noise.secondaryColor",
+            opts,
+          ),
+        }
+      : {}),
+  };
+}
+
+function lowerStaticTexture(
+  texture: NonNullable<LSMLNode["texture"]>,
+  nodeId: string | undefined,
+  opts: CompileOptions,
+): NonNullable<LSMLNode["texture"]> {
+  return {
+    radius: clampNonNegativeMagnitude(
+      texture.radius,
+      MAX_NOISE_SIZE_PX,
+      nodeId,
+      "texture.radius",
+      opts,
+    ),
+    noiseSize: clampNonNegativeMagnitude(
+      texture.noiseSize,
+      MAX_NOISE_SIZE_PX,
+      nodeId,
+      "texture.noiseSize",
+      opts,
+    ),
+    ...(texture.noiseSizeVector !== undefined
+      ? {
+          noiseSizeVector: clampNoiseSizeVector(
+            texture.noiseSizeVector,
+            nodeId,
+            "texture.noiseSizeVector",
+            opts,
+          ),
+        }
+      : {}),
+    ...(texture.clipToShape !== undefined ? { clipToShape: texture.clipToShape } : {}),
+  };
+}
+
+function lowerStaticGlass(
+  glass: NonNullable<LSMLNode["glass"]>,
+  nodeId: string | undefined,
+  opts: CompileOptions,
+): NonNullable<LSMLNode["glass"]> {
+  return {
+    radius: clampNonNegativeMagnitude(
+      glass.radius,
+      MAX_STATIC_BLUR_PX,
+      nodeId,
+      "glass.radius",
+      opts,
+    ),
+    refraction: clampUnitInterval(glass.refraction, nodeId, "glass.refraction", opts),
+    depth: clampUnitInterval(glass.depth, nodeId, "glass.depth", opts),
+    lightAngle: normalizeDegrees(glass.lightAngle),
+    lightIntensity: clampUnitInterval(glass.lightIntensity, nodeId, "glass.lightIntensity", opts),
+    dispersion: clampUnitInterval(glass.dispersion, nodeId, "glass.dispersion", opts),
+    splay: clampUnitInterval(glass.splay, nodeId, "glass.splay", opts),
+  };
 }
 
 // --- keyframes lowering (LSML §6.6 → runtime Keyframes shape) ----------
