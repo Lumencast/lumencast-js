@@ -421,7 +421,13 @@ describe("static blur/backdropBlur/shadow clamps — ADR 014 R2/R8 (Prism issue 
       warns,
     );
     expect(props.shadow).toEqual([
-      { color: "#000000", x: MAX_SHADOW_OFFSET_PX, y: -MAX_SHADOW_OFFSET_PX, blur: MAX_STATIC_BLUR_PX, spread: MAX_SHADOW_SPREAD_PX },
+      {
+        color: "#000000",
+        x: MAX_SHADOW_OFFSET_PX,
+        y: -MAX_SHADOW_OFFSET_PX,
+        blur: MAX_STATIC_BLUR_PX,
+        spread: MAX_SHADOW_SPREAD_PX,
+      },
     ]);
     expect(warns.length).toBeGreaterThan(0);
   });
@@ -435,7 +441,10 @@ describe("static blur/backdropBlur/shadow clamps — ADR 014 R2/R8 (Prism issue 
 
   it("R9 — clamp warnings on shadow fields do not echo the offending value", () => {
     const warns: string[] = [];
-    compileStatic({ shadow: [{ x: 123456789, y: 0, blur: 0, spread: 0, color: "#000" }] } as never, warns);
+    compileStatic(
+      { shadow: [{ x: 123456789, y: 0, blur: 0, spread: 0, color: "#000" }] } as never,
+      warns,
+    );
     expect(warns.join(" ")).not.toContain("123456789");
   });
 });

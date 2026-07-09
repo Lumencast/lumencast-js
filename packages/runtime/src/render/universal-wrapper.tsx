@@ -183,7 +183,10 @@ export function UniversalWrapper({
   // box that carries the sized content.
   if (
     hasBlendMode &&
-    (hasOpacity || transform !== undefined || filter !== undefined || backdropFilterCss !== undefined)
+    (hasOpacity ||
+      transform !== undefined ||
+      filter !== undefined ||
+      backdropFilterCss !== undefined)
   ) {
     const outer: CSSProperties = { mixBlendMode: mixBlendMode as CSSProperties["mixBlendMode"] };
     if (hasPosition) {

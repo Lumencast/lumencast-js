@@ -1101,7 +1101,13 @@ function lowerStaticShadow(
     x: clampShadowMagnitude(s.x, MAX_SHADOW_OFFSET_PX, nodeId, `shadow[${i}].x`, opts),
     y: clampShadowMagnitude(s.y, MAX_SHADOW_OFFSET_PX, nodeId, `shadow[${i}].y`, opts),
     blur: clampStaticBlur(s.blur, nodeId, `shadow[${i}].blur`, opts),
-    spread: clampShadowMagnitude(s.spread, MAX_SHADOW_SPREAD_PX, nodeId, `shadow[${i}].spread`, opts),
+    spread: clampShadowMagnitude(
+      s.spread,
+      MAX_SHADOW_SPREAD_PX,
+      nodeId,
+      `shadow[${i}].spread`,
+      opts,
+    ),
   }));
 }
 
