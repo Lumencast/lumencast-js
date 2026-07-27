@@ -14,6 +14,10 @@ export {
   MAX_PATH_SUBPATH_BYTES,
   MAX_PATH_SUBPATHS,
   MAX_PATH_COMMANDS,
+  // RFC-0001 A2 §A2.7 — exported as VALUES, on purpose (see compile.ts).
+  CAPTURE_SOURCE_KINDS,
+  CAPTURE_VISUAL_KINDS,
+  CAPTURE_DEVICE_REF_RE,
   type CompileOptions,
   type CompileDiagnostic,
 } from "./compile.js";

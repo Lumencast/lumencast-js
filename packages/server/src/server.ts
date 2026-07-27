@@ -190,6 +190,16 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     }
     sub.decision = decision;
 
+    // A scene whose backing bundle failed validation is unservable : serve the
+    // recorded error instead of a snapshot of a scene built from a bundle we
+    // rejected (RFC-0001 A2 §A2.4, mirrors lumencast-go / lumencast-rs).
+    const rejection = activeScene.rejection();
+    if (rejection) {
+      sendError(sub, rejection.code, rejection.message, false);
+      sub.ws.close(1008, rejection.code);
+      return;
+    }
+
     // LSDP/1.1 §4.1, §18 — honour since_sequence when the replay buffer
     // covers the gap. Otherwise fall back to a fresh snapshot at the
     // current scene seq.

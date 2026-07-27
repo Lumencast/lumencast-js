@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CAPTURE_VISUAL_KINDS } from "@lumencast/protocol";
 import type { PrimitiveProps } from "./index";
 import { useOptionalLumencastRuntime } from "../../overlay/runtime-context";
 import { claimCaptureStream, releaseCaptureStream } from "./capture-stream-cache";
@@ -166,10 +167,12 @@ function isCaptureCapable(): boolean {
 }
 
 /** Visual kinds render a `<video>` ; audio kinds stay visually empty. */
+/** RFC-0001 A2 §A2.4 — the visual set is shared with the compiler and the
+ *  server kit (`@lumencast/protocol`), never re-listed here : a local copy is
+ *  precisely how `media.file` / `media.game` drifted and rendered PLACEHOLDER
+ *  in an ACQUIRE-capable host. */
 function isVisualKind(sourceKind: string): boolean {
-  return (
-    sourceKind === "media.webcam" || sourceKind === "media.screen" || sourceKind === "media.window"
-  );
+  return CAPTURE_VISUAL_KINDS.has(sourceKind);
 }
 
 /** A render dimension: a finite number → px, a non-empty string → verbatim,

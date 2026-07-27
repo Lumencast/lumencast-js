@@ -7,6 +7,7 @@
 // port. The serve-scenario CLI is the only sanctioned consumer.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { checkZabCaptureNodes } from "@lumencast/protocol";
 import { canWritePath, type AuthDecision, type Role, type StaticTokens } from "./auth.js";
 import { createScene } from "./scene.js";
 import type { ServerHandle } from "./server.js";
@@ -125,7 +126,7 @@ export async function startTestControl(options: TestControlOptions): Promise<Tes
     // the $BUNDLE.<id>.hash placeholder identifier). Fall back to the bundle id.
     const inline =
       primary.inline && typeof primary.inline === "object" && primary.inline !== null
-        ? (primary.inline as { scene_id?: unknown; operator_inputs?: unknown })
+        ? (primary.inline as { scene_id?: unknown; operator_inputs?: unknown; layout?: unknown })
         : undefined;
     const inlineSceneId = inline?.scene_id;
     const sceneId = typeof inlineSceneId === "string" ? inlineSceneId : primary.id;
@@ -139,6 +140,19 @@ export async function startTestControl(options: TestControlOptions): Promise<Tes
       initialState,
       ...(operatorInputs ? { operatorInputs } : {}),
     });
+
+    // Vendor-primitive validation (RFC-0001 + Amendment 2). A bundle carrying
+    // a malformed `x-zab.capture` is registered but marked unservable, so the
+    // subscriber gets an INVALID_VALUE error frame where it would otherwise
+    // read a snapshot of a scene built from a bundle we rejected. Scoped to
+    // capture nodes on purpose : the scenario suite feeds inline bodies from
+    // several LSML minors, and a full bundle validation here would reject
+    // primitives this SDK has not caught up with yet.
+    if (inline?.layout !== undefined) {
+      const captureError = checkZabCaptureNodes(inline.layout);
+      if (captureError !== null) scene.reject("INVALID_VALUE", captureError);
+    }
+
     options.server.setActiveScene(scene);
 
     // The bundle provider serves the inline body of any registered bundle.
