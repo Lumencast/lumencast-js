@@ -35,6 +35,12 @@ export type ValidationError =
   | { code: "UNKNOWN_PATH"; path: LeafPath; message: string }
   | { code: "INVALID_VALUE"; path: LeafPath; message: string };
 
+/** The error a rejected scene serves in place of its snapshot. */
+export interface SceneRejection {
+  code: "INVALID_VALUE";
+  message: string;
+}
+
 export interface Scene {
   readonly sceneId: SceneId;
   readonly sceneVersion: SceneVersion;
@@ -61,6 +67,15 @@ export interface Scene {
    * always permitted (test sessions own that namespace per LSDP/1 §10).
    */
   validateInput(patches: Patch[]): ValidationError | null;
+  /**
+   * Mark the scene unservable: every subscriber receives this error frame
+   * instead of a snapshot. Called when the backing bundle failed validation —
+   * serving a snapshot of a scene built from a bundle we rejected is exactly
+   * the silent-acceptance bug this seam exists to close.
+   */
+  reject(code: SceneRejection["code"], message: string): void;
+  /** The rejection recorded by `reject`, or null. */
+  rejection(): SceneRejection | null;
 }
 
 export function createScene(init: SceneInit): Scene {
@@ -112,12 +127,18 @@ export function createScene(init: SceneInit): Scene {
     return null;
   }
 
+  let sceneRejection: SceneRejection | null = null;
+
   return {
     sceneId: init.sceneId,
     sceneVersion: init.sceneVersion,
     store,
     operatorInputs,
     update,
+    reject: (code, message) => {
+      sceneRejection = { code, message };
+    },
+    rejection: () => sceneRejection,
     onPatches: (listener) => {
       sceneListeners.add(listener);
       return () => {

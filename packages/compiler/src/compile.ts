@@ -41,7 +41,12 @@ import {
   MASK_TYPES,
   MASK_OPS,
 } from "./lsml-1_2.js";
-import { checkHostAllowed } from "@lumencast/protocol";
+import {
+  CAPTURE_DEVICE_REF_RE,
+  CAPTURE_SOURCE_KINDS,
+  CAPTURE_VISUAL_KINDS,
+  checkHostAllowed,
+} from "@lumencast/protocol";
 
 /** Structured compile diagnostic (ADR 001 §3.4, issue #34). Per
  *  Bastion R9 it carries node identity + field + static reason and
@@ -224,28 +229,13 @@ const KIND_NODE_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   "x-zab.meet-peer": new Set(["x-zab.slotRef", "size"]),
 };
 
-/** RFC-0001 — `x-zab.sourceKind` enum. Visual kinds reserve a real box ;
- *  audio-only kinds may render a zero-area inert node. */
-const CAPTURE_SOURCE_KINDS: ReadonlySet<string> = new Set([
-  "media.webcam",
-  "media.screen",
-  "media.window",
-  "media.app_audio",
-  "media.mic",
-]);
-
-/** RFC-0001 — visual `sourceKind`s, for which `size` is required. */
-const CAPTURE_VISUAL_KINDS: ReadonlySet<string> = new Set([
-  "media.webcam",
-  "media.screen",
-  "media.window",
-]);
-
-/** RFC-0001 — `x-zab.deviceRef` is a logical, hash-safe alias, never a
- *  physical device_id. The pattern rejects a UUID, a `device:0` style id,
- *  uppercase, leading digit, or anything over 64 chars. Anchored, no
- *  backtracking (anti-ReDoS). */
-const CAPTURE_DEVICE_REF_RE = /^[a-z][a-z0-9-]{0,63}$/;
+/** RFC-0001 A2 §A2.7 (normative) — the `x-zab.sourceKind` enum and its visual
+ *  subset are re-exported as VALUES, not only as types, so a consumer (Zab
+ *  Prism, ADR 023 A1 §A1.4/§A1.5) can assert at build time that its own list
+ *  is included in ours. Publishing them as types only is what let three source
+ *  kinds drift unnoticed. The sets themselves live in `@lumencast/protocol` —
+ *  single source of truth shared with the runtime and the server kit. */
+export { CAPTURE_SOURCE_KINDS, CAPTURE_VISUAL_KINDS, CAPTURE_DEVICE_REF_RE };
 
 /** ADR Blue 009 §3.1 — `x-zab.slotRef` is a logical, hash-safe slot alias,
  *  never a volatile peerId / room id. Same grammar as `deviceRef` : rejects a

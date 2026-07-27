@@ -49,6 +49,14 @@ export {
 export { isHostAllowed, checkHostAllowed, type HostAllowDecision } from "./host-allow.js";
 
 export {
+  CAPTURE_SOURCE_KINDS,
+  CAPTURE_VISUAL_KINDS,
+  CAPTURE_DEVICE_REF_RE,
+  ZAB_CAPTURE_KIND,
+  checkZabCaptureNodes,
+} from "./x-zab-capture.js";
+
+export {
   snapshot,
   delta,
   sceneChanged,
