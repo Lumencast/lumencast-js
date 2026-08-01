@@ -45,6 +45,40 @@ describe("x-zab.capture — RC1 : compiles, preserves vendor props, no drop", ()
     });
   });
 
+  it("preserves an authored fit without a diagnostic", () => {
+    const onWarn = vi.fn();
+    const out = compileBundle(
+      {
+        ...base,
+        layout: {
+          kind: "x-zab.capture",
+          id: "cam",
+          "x-zab.sourceKind": "media.webcam",
+          "x-zab.deviceRef": "primary-cam",
+          size: { w: 640, h: 360 },
+          fit: "fill",
+        },
+      },
+      { onWarn },
+    );
+    expect(onWarn).not.toHaveBeenCalled();
+    expect(out.root.props).toMatchObject({ fit: "fill" });
+  });
+
+  it("omits fit when the author did not set one", () => {
+    const out = compileBundle({
+      ...base,
+      layout: {
+        kind: "x-zab.capture",
+        id: "cam",
+        "x-zab.sourceKind": "media.webcam",
+        "x-zab.deviceRef": "primary-cam",
+        size: { w: 640, h: 360 },
+      },
+    });
+    expect(out.root.props).not.toHaveProperty("fit");
+  });
+
   it("strict mode does not throw on a valid capture node", () => {
     expect(() =>
       compileBundle(

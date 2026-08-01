@@ -222,7 +222,7 @@ const KIND_NODE_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   // RFC-0001 / ADR 004 §3.1 — vendor primitive. The `x-zab.*` props are
   // consumed (forwarded into the RenderNode), NOT dropped. `deviceRef` is
   // metadata for the out-of-bundle resolver ; the runtime ignores it.
-  "x-zab.capture": new Set(["x-zab.sourceKind", "x-zab.deviceRef", "size"]),
+  "x-zab.capture": new Set(["x-zab.sourceKind", "x-zab.deviceRef", "size", "fit"]),
   // ADR Blue 009 §3.1 (Amendment 2) — slot-only meet-peer placeholder. Only a
   // logical `x-zab.slotRef` + geometry are consumed ; NO cam/peer identity
   // (`camRef`/`camRoomHint` were rejected — voie (b), stream-level ZabCam).
@@ -513,6 +513,10 @@ function compileNode(node: LSMLNode, opts: CompileOptions): RenderNode {
         props["width"] = node.size.w;
         props["height"] = node.size.h;
       }
+      // Same untrusted-passthrough treatment as `image.fit` (line ~411) —
+      // no enum validation at compile time, the runtime primitive/host
+      // decide what an unrecognised value falls back to.
+      if (node.fit !== undefined) props["fit"] = node.fit;
       break;
     }
 
