@@ -14,9 +14,10 @@ const captureNode = (props: Record<string, unknown>): unknown => ({
 });
 
 describe("x-zab.sourceKind enum (§A2.2)", () => {
-  it("carries the eight normative kinds", () => {
+  it("carries the nine normative kinds", () => {
     expect([...CAPTURE_SOURCE_KINDS].sort()).toEqual(
       [
+        "media.app",
         "media.app_audio",
         "media.file",
         "media.game",
@@ -31,7 +32,14 @@ describe("x-zab.sourceKind enum (§A2.2)", () => {
 
   it("the visual set is a SECOND set, and every member is a known kind (§A2.4)", () => {
     expect([...CAPTURE_VISUAL_KINDS].sort()).toEqual(
-      ["media.file", "media.game", "media.screen", "media.webcam", "media.window"].sort(),
+      [
+        "media.app",
+        "media.file",
+        "media.game",
+        "media.screen",
+        "media.webcam",
+        "media.window",
+      ].sort(),
     );
     for (const k of CAPTURE_VISUAL_KINDS) expect(CAPTURE_SOURCE_KINDS.has(k)).toBe(true);
   });

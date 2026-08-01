@@ -78,7 +78,8 @@ export async function claimCaptureStream(
       break;
     }
     case "media.screen":
-    case "media.window": {
+    case "media.window":
+    case "media.app": {
       // DIRECT capture of the picked desktopCapturer surface (no system picker)
       // via Electron's legacy `chromeMediaSource:desktop` + resolved id.
       if (typeof captureSourceId === "string" && captureSourceId.length > 0) {

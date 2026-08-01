@@ -15,11 +15,20 @@
 // not only as TypeScript types, so a consumer can assert its own list is
 // included in ours at build time.
 
-/** RFC-0001 A2 §A2.2 — the `x-zab.sourceKind` enum (eight values). */
+/** RFC-0001 A2 §A2.2 — the `x-zab.sourceKind` enum (nine values).
+ *
+ *  `media.app` (Amendment 3) is a window capture that PERSISTS ACROSS the
+ *  captured app's process restarting — a native `window_capture` matched
+ *  by executable name (libobs `priority`) instead of a specific window
+ *  instance/handle, which goes stale the moment the app relaunches with a
+ *  new HWND. Same wire shape as `media.window` (a `deviceRef` + geometry) ;
+ *  the app-vs-window distinction is resolved entirely by the consuming app
+ *  (Prism's capture-resolver), never carried as a physical id in the bundle. */
 export const CAPTURE_SOURCE_KINDS: ReadonlySet<string> = new Set([
   "media.webcam",
   "media.screen",
   "media.window",
+  "media.app",
   "media.file",
   "media.game",
   "media.app_audio",
@@ -37,6 +46,7 @@ export const CAPTURE_VISUAL_KINDS: ReadonlySet<string> = new Set([
   "media.webcam",
   "media.screen",
   "media.window",
+  "media.app",
   "media.file",
   "media.game",
 ]);
