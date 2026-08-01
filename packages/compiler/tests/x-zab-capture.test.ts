@@ -79,6 +79,30 @@ describe("x-zab.capture — RC1 : compiles, preserves vendor props, no drop", ()
     expect(out.root.props).not.toHaveProperty("fit");
   });
 
+  it("compiles a media.app node — same wire shape as media.window, no diagnostic", () => {
+    const onWarn = vi.fn();
+    const out = compileBundle(
+      {
+        ...base,
+        layout: {
+          kind: "x-zab.capture",
+          id: "app",
+          "x-zab.sourceKind": "media.app",
+          "x-zab.deviceRef": "obs-studio",
+          size: { w: 1920, h: 1080 },
+        },
+      },
+      { onWarn },
+    );
+    expect(onWarn).not.toHaveBeenCalled();
+    expect(out.root.props).toMatchObject({
+      "x-zab.sourceKind": "media.app",
+      "x-zab.deviceRef": "obs-studio",
+      width: 1920,
+      height: 1080,
+    });
+  });
+
   it("strict mode does not throw on a valid capture node", () => {
     expect(() =>
       compileBundle(

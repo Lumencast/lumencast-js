@@ -323,6 +323,36 @@ describe("x-zab.capture — RC8 : ACQUIRE on a capable host", () => {
     });
   });
 
+  it("media.app acquires via the resolved captureSourceId, same wire shape as media.window", async () => {
+    const { stream } = fakeStream();
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    const resolveCaptureDevice = vi.fn().mockReturnValue({ captureSourceId: "window:42" });
+    await withMediaDevices({ getUserMedia } as never, async () => {
+      await renderWithRuntime(
+        {
+          kind: "x-zab.capture",
+          id: "app",
+          props: {
+            "x-zab.sourceKind": "media.app",
+            "x-zab.deviceRef": "obs-studio",
+            width: 640,
+            height: 360,
+          },
+        },
+        resolveCaptureDevice,
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(getUserMedia).toHaveBeenCalledWith({
+        video: {
+          mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: "window:42" },
+        },
+      });
+      expect(container.querySelector("video")).not.toBeNull();
+    });
+  });
+
   it("an audio kind acquires but stays visually empty (no <video>)", async () => {
     const { stream } = fakeStream();
     const getUserMedia = vi.fn().mockResolvedValue(stream);
