@@ -462,6 +462,11 @@ export interface LSMLCapture extends LSMLBaseNode {
    *  (`media.webcam`/`media.screen`/`media.window`) ; audio-only kinds
    *  (`media.app_audio`/`media.mic`) may omit it (zero-area box). */
   size?: { w: number; h: number };
+  /** How the live stream fills the box — same vocabulary as `image.fit`.
+   *  `cover` (default) crops to fill preserving aspect ; `contain`
+   *  letterboxes ; `fill` stretches to the box exactly, distorting aspect
+   *  if it differs from the source's. */
+  fit?: "contain" | "cover" | "fill";
 }
 
 /** ADR Blue 009 §3.1 (Amendment 2) — `x-zab.meet-peer` : a transparent

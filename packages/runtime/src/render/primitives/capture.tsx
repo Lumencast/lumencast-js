@@ -113,8 +113,13 @@ export function Capture({ resolved }: PrimitiveProps) {
   }, [stream]);
 
   // ACQUIRE with a visual stream → render the <video>. Audio-only kinds keep
-  // the transparent box (no visible element) even when acquired.
+  // the transparent box (no visible element) even when acquired. `fit`
+  // mirrors the `image` primitive's own untrusted-cast pattern: the
+  // compiler forwards it verbatim (KIND_NODE_KEYS/x-zab.capture), never
+  // validated against a fixed enum here — an unrecognised value just falls
+  // through to the browser's CSS default (`fill`), same as an `<img>` would.
   if (stream !== null && isVisualKind(sourceKind)) {
+    const fit = (resolved.fit as string | undefined) ?? "cover";
     return (
       <video
         ref={videoRef}
@@ -122,7 +127,12 @@ export function Capture({ resolved }: PrimitiveProps) {
         autoPlay
         muted
         playsInline
-        style={{ width, height, objectFit: "cover", pointerEvents: "none" }}
+        style={{
+          width,
+          height,
+          objectFit: fit as React.CSSProperties["objectFit"],
+          pointerEvents: "none",
+        }}
       />
     );
   }

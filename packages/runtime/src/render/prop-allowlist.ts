@@ -136,7 +136,7 @@ export const PRIMITIVE_PROP_ALLOWLIST: Readonly<Record<RenderKind, ReadonlySet<s
   // flattened geometry (universal) ; the `x-zab.*` props are carried as
   // metadata (the renderer reserves the box, ignores deviceRef). Listed so
   // they are NOT flagged as silent drops by the anti-drop audit.
-  "x-zab.capture": allow(["x-zab.sourceKind", "x-zab.deviceRef", "width", "height"]),
+  "x-zab.capture": allow(["x-zab.sourceKind", "x-zab.deviceRef", "width", "height", "fit"]),
   // ADR Blue 009 §3.1 (Amendment 2) — vendor meet-peer SLOT placeholder.
   // `width`/`height` are the flattened geometry (universal) ; `x-zab.slotRef`
   // is the logical slot identity carried as metadata (the runtime resolves

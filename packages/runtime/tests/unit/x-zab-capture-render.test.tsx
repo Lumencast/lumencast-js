@@ -242,6 +242,61 @@ describe("x-zab.capture — RC8 : ACQUIRE on a capable host", () => {
     });
   });
 
+  it("honours an authored fit on the mounted <video>, defaulting to cover", async () => {
+    const { stream } = fakeStream();
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    const resolveCaptureDevice = vi.fn().mockReturnValue({ deviceId: "phys-cam" });
+    await withMediaDevices({ getUserMedia } as never, async () => {
+      await renderWithRuntime(
+        {
+          kind: "x-zab.capture",
+          id: "cam",
+          props: {
+            "x-zab.sourceKind": "media.webcam",
+            "x-zab.deviceRef": "primary-cam",
+            width: 640,
+            height: 360,
+            fit: "fill",
+          },
+        },
+        resolveCaptureDevice,
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const video = container.querySelector("video") as HTMLVideoElement | null;
+      expect(video).not.toBeNull();
+      expect(video!.style.objectFit).toBe("fill");
+    });
+  });
+
+  it("defaults to cover when no fit is authored", async () => {
+    const { stream } = fakeStream();
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    const resolveCaptureDevice = vi.fn().mockReturnValue({ deviceId: "phys-cam" });
+    await withMediaDevices({ getUserMedia } as never, async () => {
+      await renderWithRuntime(
+        {
+          kind: "x-zab.capture",
+          id: "cam",
+          props: {
+            "x-zab.sourceKind": "media.webcam",
+            "x-zab.deviceRef": "primary-cam",
+            width: 640,
+            height: 360,
+          },
+        },
+        resolveCaptureDevice,
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const video = container.querySelector("video") as HTMLVideoElement | null;
+      expect(video).not.toBeNull();
+      expect(video!.style.objectFit).toBe("cover");
+    });
+  });
+
   it("uses getDisplayMedia for media.screen when no deviceRef is declared", async () => {
     const { stream } = fakeStream();
     const getUserMedia = vi.fn();
