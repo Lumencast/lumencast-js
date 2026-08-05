@@ -488,13 +488,31 @@ poste de régie, CEF Pulsar — et émettra les requêtes vers ces cibles : SSRF
 poste de diffusion, et oracle de temps sur le réseau interne (une image qui charge ou
 non, un délai qui diffère, énumèrent l'interne sans jamais rien exfiltrer).
 
+**L'exposition est en `https://`, pas en `http://`** — la précision n'est pas
+cosmétique. `checkSrc` contrôle le schéma **avant** l'hôte : un `src`
+`http://10.0.0.5/x.png` est déjà refusé par T2 (`GATE_SCHEME_NOT_ALLOWED`) et n'a
+jamais atteint la question du manifeste. Le défaut réel est
+`https://quasar.internal/x.png` ou `https://10.0.0.5/x.png` : schéma conforme, hôte
+interne, allowlist complice. Un certificat invalide sur la cible ne referme rien — il
+échoue *après* que la connexion TCP a eu lieu, ce qui suffit à l'oracle.
+
 **Une seconde source, que personne n'a déclarée.** En profil embedded-local,
 `http_fetcher.go:124-151` **synthétise** la liste par balayage regex
 (`https?://([^/"'\s]+)`) du blob de layout, activé par `InjectAllowedHosts`
 (`cmd/orion/main.go:503`). Le gate y devient **auto-référentiel** : la scène autorise
-ses propres hôtes. Un layout portant `http://10.0.0.5/x.png` s'auto-autorise. La
-portée est le sidecar Prism, jamais l'antenne — mais c'est la machine de l'opérateur,
-c'est-à-dire précisément le poste depuis lequel un SSRF est intéressant.
+ses propres hôtes. Trois précisions qui bornent la portée réelle, et qu'il faut avoir
+en tête avant de corriger :
+
+- la synthèse ne s'arme que si `len(out.Assets) == 0` — une scène qui **déclare** son
+  bloc `assets` n'est jamais touchée. Les deux sources ne se recouvrent donc pas :
+  c'est l'une **ou** l'autre, jamais une liste déclarée enrichie en douce ;
+- le balayage est nourri de deux CDN d'amorce (`previewBaselineHosts` :
+  `ddragon.leagueoflegends.com`, `ddragon.canisback.com`), qui couvrent les URL
+  résolues au **runtime** depuis des feuilles de données et n'apparaissent donc pas
+  dans le layout statique. Tous deux sont publics : **le plancher les préserve
+  intégralement**, la preview des arts de champion ne bouge pas ;
+- la portée est le sidecar Prism, jamais l'antenne — mais c'est la machine de
+  l'opérateur, c'est-à-dire précisément le poste depuis lequel un SSRF est intéressant.
 
 **Ce que ce texte ne remet pas en cause.** `allowedHosts` **reste dans le bundle**,
 scellé par le hash — vérifié avec Bastion : une configuration séparée serait
@@ -515,12 +533,24 @@ Un prédicat `isPublicHostEntry(entry)` — **une** implémentation Go dans le p
    entière supprime le problème au lieu de courir derrière ;
 2. **un nom mono-label** (`zabgate`, `quasar`, aucun point) — résolu par suffixe de
    recherche du réseau local, donc interne par construction ;
-3. **un suffixe réservé ou local** : `.internal`, `.local`, `.localdomain`,
-   `.home.arpa`, `.localhost`, ainsi que `localhost` lui-même ;
+3. **un suffixe à usage spécial ou coutumier**. La liste n'est pas une invention
+   maison : elle part des **noms de domaine à usage spécial de la RFC 6761**
+   (`.localhost`, `.invalid`, `.test`, `.example`, plus `localhost` lui-même) et de la
+   **RFC 6762 §3** (`.local`, mDNS), auxquelles s'ajoutent les suffixes que la pratique
+   a réservés sans les enregistrer et qu'un réseau d'entreprise résout couramment :
+   `.internal`, `.home.arpa` (RFC 8375), `.localdomain`, `.lan`, `.corp`, `.home`.
+   Nommer les RFC plutôt que d'énumérer seulement est ce qui rend la liste
+   **maintenable** : le jour où l'IANA en réserve un de plus, la règle dit déjà quoi
+   faire ;
 4. **structurellement morte** : vide, portant un port, un `userinfo`, un caractère
-   d'espacement, un joker. Ces entrées ne peuvent **jamais** égaler un `u.Hostname()` :
-   les laisser passer laisse l'auteur croire qu'il a autorisé quelque chose. Un
-   manifeste dont une entrée est inerte est un manifeste qui ment.
+   d'espacement, un joker. Ces entrées ne peuvent **jamais** égaler un `u.Hostname()`,
+   et c'est vrai **aujourd'hui, sans ce plancher** : `hostMatches` compare à l'hôte
+   parsé, donc `assets.example.com:8443` dans le manifeste n'autorise déjà rien du
+   tout. La règle 4 ne crée donc aucun refus nouveau — elle **révèle un échec
+   silencieux existant**. C'est son meilleur argument : un auteur qui écrit un port
+   croit avoir autorisé un hôte, découvre une image qui ne charge pas, et n'a rien
+   pour relier les deux. Un manifeste dont une entrée est inerte est un manifeste qui
+   ment ; le plancher le dit à l'auteur au lieu de le lui faire deviner.
 
 ### A5.3 — Deux sources, deux comportements — et la raison de la différence
 
@@ -564,9 +594,41 @@ décorative.
 **Anti-dérive** — et c'est la partie qui compte, parce que dupliquer un prédicat de
 sécurité entre Go et TypeScript est exactement le mode de panne qu'on se plaint
 d'avoir : on ne partage pas le code, **on partage les vecteurs de test**. Un corpus de
-fixtures — une entrée, un verdict attendu — versionné une fois et exécuté par les
-**deux** implémentations. Un verdict qui diverge fait échouer la CI des deux côtés.
-C'est la seule mesure qui attrape une divergence sans inventer un runtime commun.
+fixtures — une entrée, un verdict attendu, une classe de motif — exécuté par les
+**deux** implémentations.
+
+Encore faut-il qu'il ait une adresse, sinon « versionné une fois » devient deux copies
+qui divergent au premier ajout — précisément ce que cette section existe pour
+empêcher. Les deux dépôts concernés ne se rencontrent nulle part aujourd'hui : Orion
+est en Go dans la structure Zab (`internal/conformance/`, job `conformance-matrix` sur
+`vps-ovh`), `lumencast-js` est en TS dans la structure Lumencast et **rejoue déjà les
+fixtures d'un troisième dépôt**.
+
+**Domicile : `lumencast-protocol`**, à côté des fixtures de conformance existantes
+(`conformance/v1/fixtures/`). C'est le seul des trois dépôts qui n'est ni un
+producteur ni un consommateur du prédicat — il est déjà la source de vérité que les
+deux autres ne se disputent pas, et le corpus y est un artefact de protocole, pas de
+mise en œuvre.
+
+**Comment il atteint chaque arme :**
+
+| Arme | Mécanisme | Pourquoi celui-là |
+|---|---|---|
+| `lumencast-js` | **aucun mécanisme neuf** — le job `conformance` de `ci.yml` fait déjà `actions/checkout` de `Lumencast/lumencast-protocol` et passe `LUMENCAST_PROTOCOL_REPO`. Le corpus s'ajoute à ce run | Le chemin existe, éprouvé ; en inventer un second ici serait du travail pour rien |
+| **Orion** | fetch du corpus **au commit épinglé** par un fichier de pin versionné dans Orion, + une étape **warn-only** qui compare le pin à la tête amont | Un fetch sur `main` flottant rendrait la CI d'Orion rouge sur un commit d'un autre dépôt, sans commit d'Orion — un rouge qu'aucun auteur ne peut corriger dans sa PR. Le pin rend le build reproductible ; l'avertissement rend la dérive **visible** au lieu de silencieuse |
+
+La règle qui sépare les deux niveaux : **un verdict divergent est bloquant** (c'est
+l'invariant, il casse les deux CI) ; **un corpus amont plus récent que le pin est un
+avertissement** (c'est de l'exploitation, un humain bump le pin). Confondre les deux
+donnerait soit une CI ingérable, soit une garde décorative.
+
+Précédent maison à réutiliser plutôt qu'à réinventer : `TestQueryDescriptor_GoldenParity`
+(`internal/runtime/compute_db_test.go:20-33`) pin déjà **trois** représentations d'un
+même contrat sur une fixture unique, avec l'arme Orion et l'arme QueryMe décodant les
+mêmes octets. Le corpus d'entrées d'hôte est le même motif appliqué à un prédicat au
+lieu d'une structure — à ceci près qu'il gagne le pin de fraîcheur que le golden
+`querydescriptor` n'a pas, et dont son absence est exactement la dette qu'on ne
+reproduit pas ici.
 
 ### A5.6 — Resolution criteria (testables)
 
@@ -579,12 +641,20 @@ C'est la seule mesure qui attrape une divergence sans inventer un runtime commun
    la règle « un manifeste nomme des hôtes » est prouvée, pas seulement écrite.
 4. **Non-régression** : un bundle déclarant `["assets.example.com"]` franchit le gate
    inchangé, et le corpus de conformance `817:3` reste vert.
-5. En preview embedded-local, un layout portant `http://10.0.0.5/x.png` **et**
-   `https://cdn.example.com/y.png` produit une liste synthétisée contenant
-   `cdn.example.com` **seul** ; un diagnostic `warning` signale l'entrée écartée ; la
-   compilation **aboutit**.
-6. Le corpus de fixtures d'A5.5 est exécuté par le gate Go **et** par `host-allow.ts`,
-   et un verdict divergent fait échouer la CI des deux dépôts.
+5. En preview embedded-local, un layout **sans bloc `assets`** portant
+   `https://10.0.0.5/x.png` **et** `https://cdn.example.com/y.png` produit une liste
+   synthétisée contenant `cdn.example.com` **plus les deux CDN d'amorce**, et **pas**
+   `10.0.0.5` ; un diagnostic `warning` signale l'entrée écartée ; la compilation
+   **aboutit**. Contre-épreuve dans le même test : le même layout **avec** un bloc
+   `assets` déclaré n'est pas synthétisé du tout (`len(out.Assets) == 0` non tenu).
+6. Le corpus vit dans `lumencast-protocol/conformance/v1/fixtures/`, et **les mêmes
+   octets** sont exécutés par le gate Go et par `host-allow.ts` — l'arme JS par le job
+   `conformance` existant, l'arme Orion par fetch au commit épinglé. Un **verdict
+   divergent** fait échouer les deux CI (bloquant) ; un **corpus amont plus récent que
+   le pin** produit un avertissement, jamais un rouge (A5.5).
+6 bis. **Le pin est vérifiable** : l'étape de fraîcheur d'Orion signale un pin périmé
+   sur un corpus modifié en amont, et reste silencieuse quand il est à jour. Une garde
+   qui ne s'est jamais exprimée n'a jamais été prouvée.
 7. **R9 tenu** : le diagnostic porte le **chemin indexé** de l'entrée fautive
    (`assets.allowedHosts[2]`), jamais sa valeur — motif `AddErrorAt` déjà en place,
    raisons statiques.
@@ -595,13 +665,26 @@ Deux issues, pas une :
 
 | # | Dépôt | Périmètre | RC |
 |---|---|---|---|
-| 1 | **Orion** | `isPublicHostEntry` + refus sur la liste déclarée + filtrage à la synthèse embedded-local + corpus de fixtures | 1-5, 7 |
-| 2 | **lumencast-js** | miroir du plancher dans `host-allow.ts`, exécution du **même** corpus | 6 |
+| 0 | **lumencast-protocol** | le corpus d'entrées (`conformance/v1/fixtures/`) — entrée, verdict, classe de motif. **Précède les deux autres** : sans domicile, elles écrivent chacune leur copie | — |
+| 1 | **Orion** | `isPublicHostEntry` + refus sur la liste déclarée + filtrage à la synthèse embedded-local + fetch épinglé du corpus + garde de fraîcheur. **Inventaire du parc rendu dans l'issue avant merge** | 1-5, 6 (arme Go), 6 bis, 7 |
+| 2 | **lumencast-js** | miroir du plancher dans `host-allow.ts`, corpus branché sur le job `conformance` existant | 6 (arme TS) |
 
-**Recommandation de dispatch : Forge (Orion), pas Conduit.** Ce n'est pas un contrat
-inter-services — rien ne change sur le fil entre Canvas, Orion et Solar, et aucun
-producteur externe n'a à s'adapter : un bundle conforme aujourd'hui l'est encore
-demain. C'est un gate interne au paquet `compiler`. Conduit n'a rien à arbitrer ici.
+**Recommandation de dispatch : Forge (Orion), pas Conduit.** Le motif n'est **pas**
+« rien ne casse » — ce serait faux : un bundle **stocké** qui déclare un littéral IP
+ou un hôte mono-label passe aujourd'hui et sera refusé demain. Le motif est qu'il n'y
+a **aucune négociation entre services** : la forme sur le fil ne bouge pas, aucun
+producteur n'a de champ à ajouter, aucun consommateur de contrat à relire. C'est un
+resserrement unilatéral d'un gate interne au paquet `compiler`, au même titre que les
+budgets T5 ou les enums T4. Conduit arbitre des contrats ; il n'y en a pas ici.
+
+**Ce qui remplace le faux argument, c'est une mesure**, pas une affirmation :
+**inventorier les `allowedHosts` du parc avant merge** — toutes les entrées de tous
+les bundles stockés, passées au prédicat, avec le compte des refus par classe de
+motif. Motif ADR 011 : nommer son impact client **avant**, plutôt que de le découvrir
+après. Trois issues d'inventaire possibles selon le résultat : zéro refus (on merge),
+refus sur des entrées mortes (on merge, elles n'autorisaient déjà rien), refus sur des
+entrées vivantes (on traite la migration **avant** le gate, jamais l'inverse).
+
 **Bastion re-valide au merge**, comme §3.4 l'exige déjà pour tout code touchant T1-T6.
 
 ## 1. Context
