@@ -4,6 +4,12 @@ import { canonicalize, hashBundle, ZERO_HASH } from "../src/canonicalize.js";
 // Pinned from lumencast-go/lsml/hash_xlang_golden_test.go — the Go SDK asserts
 // its own output against these exact TS values. Moving them here is a
 // cross-language break, not a local test failure.
+//
+// These are a regression pin, NOT an oracle: they are TS-derived, and ADR 005
+// §3.2 rules that the authoritative `expected` comes from a third-party RFC 8785
+// implementation, in the `bundle-address` corpus of lumencast-protocol (issue
+// Lumencast/lumencast-protocol#42, not yet built). If the corpus ever disagrees
+// with a value below, the corpus wins and these move.
 // Bundles are parsed from their raw JSON rather than written as literals: that
 // is how they reach the canonicalizer in production, and `case_a_float` carries
 // an integer past 2^53 whose whole point is what the parse does to it.
@@ -96,17 +102,42 @@ describe("canonicalize — members with no JSON representation", () => {
   });
 });
 
-describe("canonicalize — agrees with the shape that goes on the wire", () => {
-  const samples: unknown[] = [
-    { a: 1, b: undefined },
-    { nested: { x: undefined, y: [1, { z: undefined }] } },
-    { a: null, b: 0, c: "", d: false },
-    { arr: [undefined, null, 1] },
-  ];
+// ADR 005 §3.1 bis — "an implementation must hash what it serializes":
+//   hash(x) == hash(JSON.parse(JSON.stringify(x)))
+// This is the artefact that proves the fix, and no conformance vector can:
+// a vector is loaded with JSON.parse, so it can never carry an `undefined`,
+// a function, a symbol or a `toJSON` — the faulty canonicalizer and the correct
+// one agree on every vector ever written (§3.1 bis).
+//
+// RC 2 bis requires it to be generic, not tailored to the known case: each
+// entry below is a distinct way for an in-memory value to differ from its own
+// serialization. Adding a case here is how the invariant grows.
+describe("producer property (ADR 005 §3.1 bis, RC 2 + RC 2 bis)", () => {
+  const cases: Record<string, unknown> = {
+    "undefined member": { a: undefined, b: 1 },
+    "function member": { a: () => 0, b: 1 },
+    "symbol member": { a: Symbol("s"), b: 1 },
+    "toJSON — Date": { d: new Date(0) },
+    "toJSON — custom object": { c: { toJSON: () => ({ z: 1 }) } },
+    "toJSON — returning undefined drops the member": { c: { toJSON: () => undefined }, b: 1 },
+    "toJSON — nested inside an array": { a: [new Date(0), 1] },
+    "undefined/function/symbol as array elements": { a: [undefined, () => 0, Symbol("s"), 1] },
+    "nested mix": { o: { x: undefined, y: [1, { z: undefined, d: new Date(0) }] } },
+    "plain JSON is unaffected": { a: null, b: 0, c: "", d: false, e: [1, 2] },
+  };
 
-  it("matches JSON.parse(JSON.stringify(v)) canonicalized", () => {
-    for (const s of samples) {
-      expect(canonicalize(s)).toBe(canonicalize(JSON.parse(JSON.stringify(s))));
-    }
-  });
+  for (const [name, x] of Object.entries(cases)) {
+    it(`canonicalizes the serialized form — ${name}`, () => {
+      expect(canonicalize(x)).toBe(canonicalize(JSON.parse(JSON.stringify(x))));
+    });
+
+    it(`hashes the serialized form — ${name}`, async () => {
+      const asBuilt = await hashBundle({ ...(x as object), scene_version: ZERO_HASH });
+      const asSent = await hashBundle({
+        ...(JSON.parse(JSON.stringify(x)) as object),
+        scene_version: ZERO_HASH,
+      });
+      expect(asBuilt.scene_version).toBe(asSent.scene_version);
+    });
+  }
 });
