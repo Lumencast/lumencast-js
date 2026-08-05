@@ -37,11 +37,20 @@ function stringify(v: unknown): string {
   }
   if (typeof v === "object") {
     const obj = v as Record<string, unknown>;
-    const keys = Object.keys(obj).sort();
+    // A member whose value has no JSON representation is omitted by
+    // JSON.stringify, which is what actually goes on the wire. Hashing it as
+    // `null` would address a shape that is never transmitted.
+    const keys = Object.keys(obj)
+      .filter((k) => hasJsonRepresentation(obj[k]))
+      .sort();
     return "{" + keys.map((k) => JSON.stringify(k) + ":" + stringify(obj[k])).join(",") + "}";
   }
-  // undefined / function / symbol — JSON has no representation; drop.
+  // undefined / function / symbol as an array element — JSON.stringify emits null.
   return "null";
+}
+
+function hasJsonRepresentation(v: unknown): boolean {
+  return v !== undefined && typeof v !== "function" && typeof v !== "symbol";
 }
 
 function bytesToHex(bytes: Uint8Array): string {
