@@ -64,11 +64,18 @@ jobs:
       - name: Test
         run: pnpm -r test
 
-      # Publish in topological order. `protocol` has no internal deps
-      # and is required by every other package, so it goes first. The
-      # `runtime` is required by `compiler`, so runtime before compiler.
-      # `pnpm publish` rewrites `workspace:*` deps to the version being
-      # published before pushing each tarball.
+      # Publish in topological order. `canonical` is the leaf — no internal
+      # deps, required by `protocol` and `compiler` — so it goes first, then
+      # `protocol`, which every other package needs. The `runtime` is required
+      # by `compiler`, so runtime before compiler. `pnpm publish` rewrites
+      # `workspace:*` deps to the version being published before pushing each
+      # tarball: a package published before its dependency would carry a
+      # version that does not exist on npm yet.
+      - name: Publish @lumencast/canonical
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --filter @lumencast/canonical publish --no-git-checks --provenance
+
       - name: Publish @lumencast/protocol
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

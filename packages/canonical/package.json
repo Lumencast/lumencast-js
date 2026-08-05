@@ -1,7 +1,7 @@
 {
-  "name": "@lumencast/compiler",
+  "name": "@lumencast/canonical",
   "version": "0.18.0",
-  "description": "LSML 1.0 / 1.1 → flat RenderBundle compiler. Lets authors write idiomatic LSML and feed it to @lumencast/runtime.",
+  "description": "Canonical JSON form and content address for LSML bundles (LSML 1.0 §3). Leaf package, no internal dependency — the single canonicalizer shared by the compiler and the protocol conformance harness.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,12 +17,18 @@
     "dist",
     "src"
   ],
-  "homepage": "https://github.com/Lumencast/lumencast-js/tree/main/packages/compiler",
+  "homepage": "https://github.com/Lumencast/lumencast-js/tree/main/packages/canonical",
   "repository": {
     "type": "git",
     "url": "https://github.com/Lumencast/lumencast-js.git",
-    "directory": "packages/compiler"
+    "directory": "packages/canonical"
   },
+  "keywords": [
+    "lumencast",
+    "lsml",
+    "canonical",
+    "content-address"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -34,11 +40,6 @@
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty",
     "test": "vitest run"
-  },
-  "dependencies": {
-    "@lumencast/canonical": "workspace:*",
-    "@lumencast/protocol": "workspace:*",
-    "@lumencast/runtime": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.1.5"

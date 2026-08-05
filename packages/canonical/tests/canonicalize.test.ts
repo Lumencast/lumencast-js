@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalize, hashBundle, ZERO_HASH } from "../src/canonicalize.js";
+import { bundleAddress, canonicalize, ZERO_HASH } from "../src/index.js";
 
 // Pinned from lumencast-go/lsml/hash_xlang_golden_test.go — the Go SDK asserts
 // its own output against these exact TS values. Moving them here is a
@@ -52,8 +52,7 @@ describe("canonicalize — cross-language goldens", () => {
     });
 
     it(`${g.name} hashes to the pinned identity`, async () => {
-      const out = await hashBundle(g.bundle);
-      expect(out.scene_version).toBe(`sha256:${g.hash}`);
+      expect(await bundleAddress(g.bundle)).toBe(`sha256:${g.hash}`);
     });
   }
 });
@@ -84,21 +83,21 @@ describe("canonicalize — members with no JSON representation", () => {
   });
 
   it("hashes an undefined-valued member identically to an absent one", async () => {
-    const withUndefined = await hashBundle({
+    const withUndefined = await bundleAddress({
       lsml: "1.1",
       scene_id: "s",
       scene_version: ZERO_HASH,
       layout: { kind: "stack" },
       metadata: undefined,
     });
-    const withoutKey = await hashBundle({
+    const withoutKey = await bundleAddress({
       lsml: "1.1",
       scene_id: "s",
       scene_version: ZERO_HASH,
       layout: { kind: "stack" },
     });
-    expect(withUndefined.scene_version).toBe(withoutKey.scene_version);
-    expect(withUndefined.scene_version).toBe(`sha256:${XLANG_GOLDENS[2]!.hash}`);
+    expect(withUndefined).toBe(withoutKey);
+    expect(withUndefined).toBe(`sha256:${XLANG_GOLDENS[2]!.hash}`);
   });
 });
 
@@ -132,12 +131,9 @@ describe("producer property (ADR 005 §3.1 bis, RC 2 + RC 2 bis)", () => {
     });
 
     it(`hashes the serialized form — ${name}`, async () => {
-      const asBuilt = await hashBundle({ ...(x as object), scene_version: ZERO_HASH });
-      const asSent = await hashBundle({
-        ...(JSON.parse(JSON.stringify(x)) as object),
-        scene_version: ZERO_HASH,
-      });
-      expect(asBuilt.scene_version).toBe(asSent.scene_version);
+      const asBuilt = await bundleAddress(x);
+      const asSent = await bundleAddress(JSON.parse(JSON.stringify(x)));
+      expect(asBuilt).toBe(asSent);
     });
   }
 });

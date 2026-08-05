@@ -48,15 +48,16 @@ We keep all `@lumencast/*` packages on the same version (single coordinated rele
 
 ## What gets published
 
-| Package                     | Notes                         |
-| --------------------------- | ----------------------------- |
-| `@lumencast/protocol`       | Foundation — no internal deps |
-| `@lumencast/server`         | Depends on protocol           |
-| `@lumencast/dev-server`     | Depends on protocol           |
-| `@lumencast/runtime`        | Depends on protocol           |
-| `@lumencast/runtime-svelte` | Depends on protocol           |
-| `@lumencast/runtime-vue`    | Depends on protocol           |
-| `@lumencast/compiler`       | Depends on protocol + runtime |
+| Package                     | Notes                                     |
+| --------------------------- | ----------------------------------------- |
+| `@lumencast/canonical`      | Leaf — no internal deps                   |
+| `@lumencast/protocol`       | Depends on canonical                      |
+| `@lumencast/server`         | Depends on protocol                       |
+| `@lumencast/dev-server`     | Depends on protocol                       |
+| `@lumencast/runtime`        | Depends on protocol                       |
+| `@lumencast/runtime-svelte` | Depends on protocol                       |
+| `@lumencast/runtime-vue`    | Depends on protocol                       |
+| `@lumencast/compiler`       | Depends on canonical + protocol + runtime |
 
 All packages share the same version. The release workflow publishes in dependency order so `workspace:*` references resolve to the just-published version.
 

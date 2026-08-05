@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/canonical" },
     { "path": "./packages/protocol" },
     { "path": "./packages/runtime" },
     { "path": "./packages/runtime-svelte" },

@@ -46,6 +46,7 @@
     "conformance": "vitest run --config vitest.conformance.config.ts"
   },
   "dependencies": {
+    "@lumencast/canonical": "workspace:*",
     "ws": "^8.18.0",
     "yaml": "^2.6.1"
   },
