@@ -461,9 +461,9 @@ bloqué (veto levable par fix ou acceptation de risque écrite ici).
 
 ## Amendment 5 — Le manifeste d'hôtes n'a pas de plancher : `allowedHosts` peut nommer le réseau interne (2026-08-05)
 
-- **Status**: proposed
+- **Status**: accepted
 - **Date**: 2026-08-05
-- **Decided**: —
+- **Decided**: 2026-08-05
 - **Deciders**: @ClodoCapeo
 - **Author**: Atlas
 
