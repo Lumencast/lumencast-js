@@ -37,7 +37,7 @@ même adresse pour le même bundle.
 
 ### 1.2 Le mécanisme, vérifié
 
-- `packages/compiler/src/canonicalize.ts:33-46` — `stringify` renvoie `"null"` pour
+- `packages/compiler/src/canonicalize.ts:31-46` — `stringify` renvoie `"null"` pour
   une valeur `undefined`, **et la clé est conservée** : `Object.keys()` la renvoie,
   la boucle l'émet. `{a: undefined}` se canonicalise donc en `{"a":null}`.
 - `JSON.stringify({a: undefined})` produit `{}` — la clé **ne voyage pas**.
@@ -56,7 +56,7 @@ même adresse pour le même bundle.
 > « Duplicated from `@lumencast/compiler` to avoid a circular workspace dep
 > (compiler depends on protocol). **Keep the two in sync.** »
 
-Et la copie porte **le même bug, ligne pour ligne** (`:25-35`). Deux conséquences,
+Et la copie porte **le même bug, ligne pour ligne** (`:25-36`). Deux conséquences,
 et la seconde est la plus grave :
 
 1. Le point de synchronisation entre deux implémentations d'un hachage
@@ -107,22 +107,77 @@ Un nouveau domaine de conformance, `conformance/v1/fixtures/bundle-address/` dan
 d'ADR 002 A5.5 : le seul des dépôts concernés qui n'est ni producteur ni consommateur
 du calcul.
 
-Un vecteur est un couple :
+Un vecteur porte **quatre** informations, et chacune ferme une ambiguïté :
 
 ```json
 {
-  "name": "member-absent-vs-null",
-  "note": "un membre absent et un membre à null sont deux documents distincts",
-  "bundle": { "...": "le document JSON tel qu'il voyage" },
+  "name": "placeholder-substituted",
+  "note": "un scene_version déjà rempli d'une valeur erronée donne la même adresse qu'un placeholder",
+  "input": {
+    "lsml": "1.0",
+    "scene_id": "s",
+    "scene_version": "sha256:deadbeef…",
+    "layout": { "kind": "stack" }
+  },
+  "substitute_scene_version": true,
+  "canonical": "{\"layout\":{\"kind\":\"stack\"},\"lsml\":\"1.0\",\"scene_id\":\"s\",\"scene_version\":\"sha256:000…000\"}",
   "expected": "sha256:<64 hex>"
 }
 ```
 
-**Le vecteur porte le document, jamais l'objet en mémoire.** C'est la décision, en une
-phrase. Un vecteur est du JSON sur disque : il **ne peut pas** contenir d'`undefined`,
-la classe entière de bugs disparaît du _contrat_, et chaque implémentation doit
-démontrer qu'elle hache **ce document-là**. Une implémentation qui hache autre chose
-que ce qu'elle sérialise échoue mécaniquement, sans qu'on ait eu à décrire son erreur.
+- **`input`** est le document **tel qu'il voyage**, `scene_version` compris et écrit en
+  clair. Le champ ne peut pas être laissé implicite : c'est le seul du bundle dont la
+  valeur d'entrée n'est pas celle qui est hachée.
+- **`substitute_scene_version`** dit **explicitement** si la substitution de spec §3.2
+  (placeholder à 64 zéros) s'applique avant hachage. Sans ce booléen, deux
+  implémentations peuvent produire deux adresses différentes **en ayant toutes deux
+  raison** — l'une ayant lu « on hache le document », l'autre « on hache le document
+  substitué ». C'est exactement le genre d'ambiguïté qui a produit l'incident.
+- **`canonical`** est la **forme canonique attendue, en octets**. Elle n'est pas
+  redondante avec `expected` : deux implémentations peuvent tomber sur la même adresse
+  par des chemins différents, et surtout, quand elles divergent, `canonical` **localise
+  la faute** au lieu de dire seulement qu'elle existe. Les goldens inter-SDK existants
+  portent déjà cette information (`lumencast-py/tests/unit/test_lsml_hash_xlang.py`) —
+  c'est un motif éprouvé, pas une invention.
+- **`expected`** est l'adresse.
+
+**Le vecteur porte le document, jamais l'objet en mémoire.** Un vecteur est du JSON sur
+disque : il **ne peut pas** contenir d'`undefined`. Cette propriété est ce qui rend le
+contrat clair — et c'est aussi, exactement, ce qui l'empêche de voir le défaut de cet
+incident. §3.1 bis en tire la conséquence au lieu de la masquer.
+
+### 3.1 bis Les vecteurs ne peuvent pas voir ce défaut-là — d'où une seconde propriété, côté producteur
+
+Le défaut de §1.2 ne vit pas **dans** un document : il vit dans **l'écart entre l'objet
+haché et les octets envoyés**. Or une arme de conformance charge un vecteur par
+`JSON.parse` : aucun `undefined` ne peut y apparaître, donc le canonicaliseur fautif
+produit exactement la même sortie que le correct. **Un corpus de vecteurs est vert avant
+le correctif comme après.** Le dire ici plutôt que de le découvrir à l'implémentation
+est le seul moyen que ce texte ne promette pas ce qu'il ne tient pas.
+
+**Décision : un second artefact, de nature différente — une propriété testée en code,
+chez le producteur.**
+
+> **Une implémentation doit hacher ce qu'elle sérialise.**
+> Pour toute valeur `x` que le producteur accepte de hacher :
+> `hash(x) == hash(JSON.parse(JSON.stringify(x)))`.
+
+Elle **échoue aujourd'hui** (`{a: undefined}` hache `{"a":null}` d'un côté, `{}` de
+l'autre) et **passe après correctif**, sans oracle externe, sans fixture, sans
+comparaison inter-langage. Elle attrape par ailleurs toute la classe — fonctions,
+symboles, valeurs à `toJSON` — et pas seulement le cas connu.
+
+Les deux artefacts ne se remplacent pas et ne se recouvrent pas :
+
+| Artefact             | Ce qu'il définit                                                        | Ce qu'il ne peut pas voir                                                   |
+| -------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Vecteurs (§3.1)      | **quelle adresse** a un document donné — l'oracle inter-implémentations | l'écart entre l'objet et sa sérialisation, qui n'existe pas dans un fichier |
+| Propriété (§3.1 bis) | **ce que l'implémentation a le droit de hacher**                        | rien sur la valeur de l'adresse — elle n'a aucun oracle                     |
+
+Chaque implémentation qui construit ses bundles en mémoire (le TS aujourd'hui, toute
+future) porte cette propriété dans sa propre suite. Le Go, qui hache des octets reçus
+(`lsml.HashRaw`), la satisfait par construction — et c'est précisément pourquoi il
+n'avait pas le bug.
 
 ### 3.2 L'oracle n'est aucune des implémentations
 
@@ -166,9 +221,14 @@ existe pour un piège nommé :
 
 **Règles de consommation : celles d'A5.5, sans exception ni variante** — arme JS sur le
 checkout existant, arme Go au commit épinglé avec garde de fraîcheur warn-only ;
-verdict divergent bloquant, corpus amont plus récent que le pin en avertissement. Ce
-texte **dépend** de l'issue d'A5.5 qui épingle le `ref: main` flottant côté JS ; il ne
-la redouble pas.
+verdict divergent bloquant, corpus amont plus récent que le pin en avertissement.
+
+**L'asymétrie a une adresse** : le `ref: main` flottant du job `conformance` de ce
+dépôt est épinglé par **Lumencast/lumencast-js#109** (issue d'A5.5, déjà ouverte). Ce
+texte en **dépend** et ne la redouble pas. À noter, parce que la note de review d'A5.5
+le relevait sans que le texte accepté le porte : tant que #109 n'est pas livrée, la
+doctrine pin + garde ne tient que sur une arme sur deux, et une divergence JS se lit
+comme un défaut du corpus au lieu d'un défaut de pin.
 
 ### 3.5 Les copies internes cessent d'être « tenues en sync »
 
@@ -177,10 +237,20 @@ la redouble pas.
 circulaire de workspace. Deux réponses possibles : la faire passer par les vecteurs,
 ou la supprimer.
 
-**Décision : la supprimer** — extraire le canonicaliseur dans un paquet feuille sans
-dépendance, que `compiler` et `protocol` importent tous deux. Une copie qui passe les
-vecteurs reste une copie : elle divergera au prochain correctif appliqué d'un seul
-côté, et les vecteurs ne l'attraperont qu'**après**. L'extraction l'empêche.
+**Elles ont déjà divergé au-delà du défaut commun**, ce qui tranche la question :
+`hashInlineBundle` (`bundle-hash.ts:14-23`) ne substitue le placeholder `scene_version`
+**que** si l'entrée est un objet non-tableau, là où `hashBundle`
+(`canonicalize.ts:19-29`) le fait inconditionnellement sur un type qui l'impose. Le
+commentaire « keep the two in sync » a donc déjà échoué, sur un point que personne
+n'avait signalé — et c'est le meilleur argument disponible contre l'option « copie qui
+passe les vecteurs ».
+
+**Décision : la supprimer** — extraire le canonicaliseur dans un **paquet feuille sans
+dépendance interne**, `@lumencast/canonical` (nom à confirmer à l'implémentation, mais
+il en faut un : « un paquet feuille » sans nom se négocie encore en revue), que
+`compiler` et `protocol` importent tous deux. Une copie qui passe les vecteurs reste
+une copie : elle divergera au prochain correctif appliqué d'un seul côté, et les
+vecteurs ne l'attraperont qu'**après**. L'extraction l'empêche.
 
 Les vecteurs restent nécessaires — ils tiennent les implémentations qu'on ne contrôle
 pas, à commencer par le Go. Extraction et vecteurs ne se remplacent pas : l'une
@@ -238,19 +308,35 @@ dissymétrie, le refus d'un canonicaliseur Python côté ZabCanvas.
 
 1. **Le vecteur du bug existe et discrimine.** Deux vecteurs — l'un avec un membre
    absent, l'autre avec le même membre à `null` — portent des `expected` **différents**.
-2. **Le canonicaliseur TS actuel échoue sur ce vecteur** avant correctif, et passe
-   après. Un corpus qui serait vert sur le code fautif ne prouverait rien : la
-   non-régression se démontre dans les deux sens.
+2. **La propriété de §3.1 bis échoue avant correctif et passe après.**
+   `hash(x) == hash(JSON.parse(JSON.stringify(x)))` sur `x = {a: undefined, b: 1}` est
+   **rouge** sur le canonicaliseur d'aujourd'hui, **vert** après. C'est ce critère, et
+   **pas un vecteur**, qui démontre la non-régression dans les deux sens — un vecteur
+   chargé par `JSON.parse` ne peut pas contenir d'`undefined`, donc ne peut pas
+   distinguer les deux versions du code (§3.1 bis).
+   2 bis. **La propriété est générique, pas taillée sur le cas connu** : elle échoue aussi
+   sur une valeur portant `toJSON`, sur une fonction et sur un symbole — sinon c'est le
+   test d'un bug, pas d'un invariant.
 3. **Chaque piège de §3.3 a au moins un vecteur**, et chaque vecteur porte une `note`
    disant lequel — un test de couverture du corpus par lui-même.
+   3 bis. **Le format de §3.1 est complet et vérifié** : chaque vecteur porte `input`,
+   `substitute_scene_version`, `canonical` et `expected` ; un vecteur auquel il manque
+   un champ fait échouer la validation du corpus. Et `canonical` est **asserté**, pas
+   seulement présent : une arme dont la forme canonique diverge échoue **même si son
+   `expected` coïncide**.
 4. **Les deux armes sont vertes sur les mêmes octets** : `pnpm conformance`
    (`lumencast-js`) et l'arme Go exécutent le même fichier et rendent le même verdict
    vecteur par vecteur.
 5. **Un verdict divergent est bloquant, un pin périmé est un avertissement** —
    règle d'A5.5, prouvée ici par une divergence artificielle sur une arme.
-6. **Il n'existe plus qu'un canonicaliseur TS dans le dépôt** : `bundle-hash.ts` n'a
-   plus de copie de `stringify`, et un test échoue si une seconde implémentation de la
-   canonicalisation réapparaît dans `packages/**`.
+6. **Il n'existe plus qu'un canonicaliseur TS dans le dépôt, et la détection est
+   mécanique.** `bundle-hash.ts` n'exporte plus de `canonicalize`/`stringify` propre et
+   ré-exporte le paquet feuille. La garde anti-réapparition est explicite : **aucun
+   fichier de `packages/**/src`autre que celui du paquet feuille ne définit de
+fonction de sérialisation canonique** — vérifié par une règle de lint sur les
+imports (seul le paquet feuille est autorisé à ne pas importer le canonicaliseur) ou
+par un test qui échoue sur toute définition de`function stringify(`/`canonicalize(` hors de ce paquet. Le critère nomme la méthode parce qu'un « un test
+   échoue si… » sans mécanisme ne se livre pas.
 7. **`expected` est reproductible** : rejouer le script de génération sur le corpus
    versionné produit des octets identiques, sinon le générateur n'est pas un oracle.
 
