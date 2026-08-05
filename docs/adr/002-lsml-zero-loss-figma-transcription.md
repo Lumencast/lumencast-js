@@ -459,6 +459,151 @@ Deux risques **posés en condition** (à confirmer par fixture Bastion, intégr�
 Eleven/utilisateur (coût). Si l'un de ces deux risques n'est pas tenu par les fixtures, le merge est
 bloqué (veto levable par fix ou acceptation de risque écrite ici).
 
+## Amendment 5 — Le manifeste d'hôtes n'a pas de plancher : `allowedHosts` peut nommer le réseau interne (2026-08-05)
+
+- **Status**: proposed
+- **Date**: 2026-08-05
+- **Decided**: —
+- **Deciders**: @ClodoCapeo
+- **Author**: Atlas
+
+> Origine : audit Bastion du chemin de push LSML (suite au veto #36, désormais clos).
+> **Étend T1/T6 de §3.4, ne les rouvre pas** — la double-barrière compiler+runtime, le
+> match strict sur `new URL().hostname` et la préservation opaque d'`allowedHosts` par
+> `emit_lsml.go` restent inchangés. Pas de veto : l'exposition résiduelle est bornée aux
+> rôles pipeline (`admin`/`service`) depuis la fermeture de #36, c'est un durcissement,
+> pas une brèche active.
+
+### A5.1 — Le défaut, vérifié sur le code
+
+**Le gate contrôle les `src` *contre* la liste, jamais la liste elle-même.**
+`authoring_gate.go:139` prend `b.Assets.AllowedHosts` verbatim, puis `checkSrc`
+(`:371-415`) impose `https`, refuse `userinfo` et tout `data:` non borné, et compare
+`u.Hostname()` en **égalité stricte** à chaque entrée (`hostMatches`). Chacun de ces
+contrôles porte sur l'URL. Aucun ne porte sur les **valeurs** du manifeste.
+
+Conséquence directe : un bundle déclarant `["zabgate", "10.0.0.5", "quasar.internal"]`
+franchit le gate sans un diagnostic. Solar tourne **dans** la frontière de confiance —
+poste de régie, CEF Pulsar — et émettra les requêtes vers ces cibles : SSRF depuis le
+poste de diffusion, et oracle de temps sur le réseau interne (une image qui charge ou
+non, un délai qui diffère, énumèrent l'interne sans jamais rien exfiltrer).
+
+**Une seconde source, que personne n'a déclarée.** En profil embedded-local,
+`http_fetcher.go:124-151` **synthétise** la liste par balayage regex
+(`https?://([^/"'\s]+)`) du blob de layout, activé par `InjectAllowedHosts`
+(`cmd/orion/main.go:503`). Le gate y devient **auto-référentiel** : la scène autorise
+ses propres hôtes. Un layout portant `http://10.0.0.5/x.png` s'auto-autorise. La
+portée est le sidecar Prism, jamais l'antenne — mais c'est la machine de l'opérateur,
+c'est-à-dire précisément le poste depuis lequel un SSRF est intéressant.
+
+**Ce que ce texte ne remet pas en cause.** `allowedHosts` **reste dans le bundle**,
+scellé par le hash — vérifié avec Bastion : une configuration séparée serait
+nécessairement l'union des besoins de toutes les scènes, donc strictement plus
+permissive, et ne serait pas scellée. Le manque n'est pas le placement du manifeste,
+c'est l'absence de plancher sur son contenu.
+
+### A5.2 — Décision : un prédicat de publicité, une seule implémentation
+
+Un prédicat `isPublicHostEntry(entry)` — **une** implémentation Go dans le paquet
+`compiler`, source de vérité — refuse une entrée qui est :
+
+1. **un littéral d'adresse IP, quel qu'il soit** — y compris public. Un manifeste
+   *nomme des hôtes* ; il ne désigne pas des adresses. Cette règle est plus large que
+   le besoin, **et c'est délibéré** : accepter les littéraux obligerait le plancher à
+   parser correctement chaque encodage (`0x7f.0.0.1`, `2130706433`, `[::ffff:10.0.0.5]`,
+   octal), et ces encodages *sont* le contournement classique. Refuser la classe
+   entière supprime le problème au lieu de courir derrière ;
+2. **un nom mono-label** (`zabgate`, `quasar`, aucun point) — résolu par suffixe de
+   recherche du réseau local, donc interne par construction ;
+3. **un suffixe réservé ou local** : `.internal`, `.local`, `.localdomain`,
+   `.home.arpa`, `.localhost`, ainsi que `localhost` lui-même ;
+4. **structurellement morte** : vide, portant un port, un `userinfo`, un caractère
+   d'espacement, un joker. Ces entrées ne peuvent **jamais** égaler un `u.Hostname()` :
+   les laisser passer laisse l'auteur croire qu'il a autorisé quelque chose. Un
+   manifeste dont une entrée est inerte est un manifeste qui ment.
+
+### A5.3 — Deux sources, deux comportements — et la raison de la différence
+
+| Source | Comportement | Pourquoi |
+|---|---|---|
+| **Liste déclarée** (chemin d'antenne) | **Refus du bundle**, nouveau code `GATE_HOST_NOT_PUBLIC` (famille T1), `422 LSML_GATE_REJECTED` comme le reste du gate | La liste est un **acte d'auteur**. L'amputer en silence lui laisserait une scène qu'il croit complète et dont une image ne chargera jamais — exactement le drop silencieux que T6 existe pour interdire |
+| **Liste synthétisée** (preview embedded-local) | **Filtrage** des entrées non publiques + diagnostic `warning` | Rien n'a été déclaré, donc rien n'est trahi. Refuser bloquerait la preview entière d'une scène dont un seul lien est interne, alors que le reste est parfaitement rendable |
+
+**L'effet réseau est le même dans les deux cas** : l'hôte non public n'est pas dans la
+liste, donc `checkSrc` refuse le `src`, donc aucune requête ne part. La différence ne
+porte que sur ce qu'on répond à l'humain. Et comme la synthèse a lieu **avant** le
+gate, le filtrage y rend la question du refus sans objet, que le gate tourne ou non
+sur ce chemin.
+
+**Le prédicat, lui, est le même** — c'est le seul point non négociable de cette
+section. Deux prédicats divergeraient, et la divergence entre deux barrières est le
+mode de panne que T1 documente déjà.
+
+### A5.4 — Ce que ce plancher ne fait pas
+
+- **Il ne traite pas le DNS rebinding.** Un nom public qui résout vers `10.0.0.5`
+  franchit n'importe quel plancher fondé sur les noms. La réponse à cette classe est
+  **côté fetch** (refus sur l'adresse *résolue*, pas sur le nom déclaré), donc hors du
+  manifeste et hors de ce texte. Nommé plutôt qu'oublié. **Déclencheur pour l'ouvrir** :
+  la première scène servie par un hôte tiers non contrôlé par le studio, ou l'abandon
+  de T7.
+- **Il ne remplace pas T7** (CSP au host CEF, §3.4). Le plancher *réduit* la surface
+  atteignable ; la CSP la *borne* indépendamment du bundle. La recommandation ferme de
+  T7 reste entière — et un plancher livré ne doit pas servir d'argument pour la classer.
+- **Il ne borne pas les ports.** Un port vit dans l'URL, pas dans le manifeste, et
+  `checkSrc` l'accepte aujourd'hui sur un hôte autorisé. Question distincte, non ouverte
+  ici.
+
+### A5.5 — Le double gate reste la doctrine (T1)
+
+Solar re-gate au runtime (`host-allow.ts`) parce que les deltas LSDP live n'ont jamais
+vu le compiler. Le plancher doit y être **miroité** : sans cela la seconde barrière
+serait plus faible que la première pour cette classe précise, ce qui la rendrait
+décorative.
+
+**Anti-dérive** — et c'est la partie qui compte, parce que dupliquer un prédicat de
+sécurité entre Go et TypeScript est exactement le mode de panne qu'on se plaint
+d'avoir : on ne partage pas le code, **on partage les vecteurs de test**. Un corpus de
+fixtures — une entrée, un verdict attendu — versionné une fois et exécuté par les
+**deux** implémentations. Un verdict qui diverge fait échouer la CI des deux côtés.
+C'est la seule mesure qui attrape une divergence sans inventer un runtime commun.
+
+### A5.6 — Resolution criteria (testables)
+
+1. Un bundle déclarant `["zabgate"]` est **refusé** (`GATE_HOST_NOT_PUBLIC`), non
+   persisté, jamais servi.
+2. Même verdict pour chacune de ces entrées, une par cas : `10.0.0.5`, `127.0.0.1`,
+   `[::1]`, `169.254.169.254`, `100.64.0.1`, `fd00::1`, `quasar.internal`, `foo.local`,
+   `localhost`, `assets.example.com:8443`, `user@assets.example.com`, `""`.
+3. Un **littéral IP public** (`93.184.216.34`) est refusé lui aussi, avec le même code —
+   la règle « un manifeste nomme des hôtes » est prouvée, pas seulement écrite.
+4. **Non-régression** : un bundle déclarant `["assets.example.com"]` franchit le gate
+   inchangé, et le corpus de conformance `817:3` reste vert.
+5. En preview embedded-local, un layout portant `http://10.0.0.5/x.png` **et**
+   `https://cdn.example.com/y.png` produit une liste synthétisée contenant
+   `cdn.example.com` **seul** ; un diagnostic `warning` signale l'entrée écartée ; la
+   compilation **aboutit**.
+6. Le corpus de fixtures d'A5.5 est exécuté par le gate Go **et** par `host-allow.ts`,
+   et un verdict divergent fait échouer la CI des deux dépôts.
+7. **R9 tenu** : le diagnostic porte le **chemin indexé** de l'entrée fautive
+   (`assets.allowedHosts[2]`), jamais sa valeur — motif `AddErrorAt` déjà en place,
+   raisons statiques.
+
+### A5.7 — Portage et dispatch
+
+Deux issues, pas une :
+
+| # | Dépôt | Périmètre | RC |
+|---|---|---|---|
+| 1 | **Orion** | `isPublicHostEntry` + refus sur la liste déclarée + filtrage à la synthèse embedded-local + corpus de fixtures | 1-5, 7 |
+| 2 | **lumencast-js** | miroir du plancher dans `host-allow.ts`, exécution du **même** corpus | 6 |
+
+**Recommandation de dispatch : Forge (Orion), pas Conduit.** Ce n'est pas un contrat
+inter-services — rien ne change sur le fil entre Canvas, Orion et Solar, et aucun
+producteur externe n'a à s'adapter : un bundle conforme aujourd'hui l'est encore
+demain. C'est un gate interne au paquet `compiler`. Conduit n'a rien à arbitrer ici.
+**Bastion re-valide au merge**, comme §3.4 l'exige déjà pour tout code touchant T1-T6.
+
 ## 1. Context
 
 ADR 001 a refermé la dette **runtime/compiler vs LSML 1.1** (paths, typo, `clipsContent`,
