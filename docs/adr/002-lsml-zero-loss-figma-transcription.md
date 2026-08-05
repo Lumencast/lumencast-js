@@ -476,7 +476,7 @@ bloqué (veto levable par fix ou acceptation de risque écrite ici).
 
 ### A5.1 — Le défaut, vérifié sur le code
 
-**Le gate contrôle les `src` *contre* la liste, jamais la liste elle-même.**
+**Le gate contrôle les `src` _contre_ la liste, jamais la liste elle-même.**
 `authoring_gate.go:139` prend `b.Assets.AllowedHosts` verbatim, puis `checkSrc`
 (`:371-415`) impose `https`, refuse `userinfo` et tout `data:` non borné, et compare
 `u.Hostname()` en **égalité stricte** à chaque entrée (`hostMatches`). Chacun de ces
@@ -494,7 +494,7 @@ cosmétique. `checkSrc` contrôle le schéma **avant** l'hôte : un `src`
 jamais atteint la question du manifeste. Le défaut réel est
 `https://quasar.internal/x.png` ou `https://10.0.0.5/x.png` : schéma conforme, hôte
 interne, allowlist complice. Un certificat invalide sur la cible ne referme rien — il
-échoue *après* que la connexion TCP a eu lieu, ce qui suffit à l'oracle.
+échoue _après_ que la connexion TCP a eu lieu, ce qui suffit à l'oracle.
 
 **Une seconde source, que personne n'a déclarée.** En profil embedded-local,
 `http_fetcher.go:124-151` **synthétise** la liste par balayage regex
@@ -526,10 +526,10 @@ Un prédicat `isPublicHostEntry(entry)` — **une** implémentation Go dans le p
 `compiler`, source de vérité — refuse une entrée qui est :
 
 1. **un littéral d'adresse IP, quel qu'il soit** — y compris public. Un manifeste
-   *nomme des hôtes* ; il ne désigne pas des adresses. Cette règle est plus large que
+   _nomme des hôtes_ ; il ne désigne pas des adresses. Cette règle est plus large que
    le besoin, **et c'est délibéré** : accepter les littéraux obligerait le plancher à
    parser correctement chaque encodage (`0x7f.0.0.1`, `2130706433`, `[::ffff:10.0.0.5]`,
-   octal), et ces encodages *sont* le contournement classique. Refuser la classe
+   octal), et ces encodages _sont_ le contournement classique. Refuser la classe
    entière supprime le problème au lieu de courir derrière ;
 2. **un nom mono-label** (`zabgate`, `quasar`, aucun point) — résolu par suffixe de
    recherche du réseau local, donc interne par construction ;
@@ -554,10 +554,10 @@ Un prédicat `isPublicHostEntry(entry)` — **une** implémentation Go dans le p
 
 ### A5.3 — Deux sources, deux comportements — et la raison de la différence
 
-| Source | Comportement | Pourquoi |
-|---|---|---|
-| **Liste déclarée** (chemin d'antenne) | **Refus du bundle**, nouveau code `GATE_HOST_NOT_PUBLIC` (famille T1), `422 LSML_GATE_REJECTED` comme le reste du gate | La liste est un **acte d'auteur**. L'amputer en silence lui laisserait une scène qu'il croit complète et dont une image ne chargera jamais — exactement le drop silencieux que T6 existe pour interdire |
-| **Liste synthétisée** (preview embedded-local) | **Filtrage** des entrées non publiques + diagnostic `warning` | Rien n'a été déclaré, donc rien n'est trahi. Refuser bloquerait la preview entière d'une scène dont un seul lien est interne, alors que le reste est parfaitement rendable |
+| Source                                         | Comportement                                                                                                           | Pourquoi                                                                                                                                                                                                |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Liste déclarée** (chemin d'antenne)          | **Refus du bundle**, nouveau code `GATE_HOST_NOT_PUBLIC` (famille T1), `422 LSML_GATE_REJECTED` comme le reste du gate | La liste est un **acte d'auteur**. L'amputer en silence lui laisserait une scène qu'il croit complète et dont une image ne chargera jamais — exactement le drop silencieux que T6 existe pour interdire |
+| **Liste synthétisée** (preview embedded-local) | **Filtrage** des entrées non publiques + diagnostic `warning`                                                          | Rien n'a été déclaré, donc rien n'est trahi. Refuser bloquerait la preview entière d'une scène dont un seul lien est interne, alors que le reste est parfaitement rendable                              |
 
 **L'effet réseau est le même dans les deux cas** : l'hôte non public n'est pas dans la
 liste, donc `checkSrc` refuse le `src`, donc aucune requête ne part. La différence ne
@@ -573,12 +573,12 @@ mode de panne que T1 documente déjà.
 
 - **Il ne traite pas le DNS rebinding.** Un nom public qui résout vers `10.0.0.5`
   franchit n'importe quel plancher fondé sur les noms. La réponse à cette classe est
-  **côté fetch** (refus sur l'adresse *résolue*, pas sur le nom déclaré), donc hors du
+  **côté fetch** (refus sur l'adresse _résolue_, pas sur le nom déclaré), donc hors du
   manifeste et hors de ce texte. Nommé plutôt qu'oublié. **Déclencheur pour l'ouvrir** :
   la première scène servie par un hôte tiers non contrôlé par le studio, ou l'abandon
   de T7.
-- **Il ne remplace pas T7** (CSP au host CEF, §3.4). Le plancher *réduit* la surface
-  atteignable ; la CSP la *borne* indépendamment du bundle. La recommandation ferme de
+- **Il ne remplace pas T7** (CSP au host CEF, §3.4). Le plancher _réduit_ la surface
+  atteignable ; la CSP la _borne_ indépendamment du bundle. La recommandation ferme de
   T7 reste entière — et un plancher livré ne doit pas servir d'argument pour la classer.
 - **Il ne borne pas les ports.** Un port vit dans l'URL, pas dans le manifeste, et
   `checkSrc` l'accepte aujourd'hui sur un hôte autorisé. Question distincte, non ouverte
@@ -612,10 +612,10 @@ mise en œuvre.
 
 **Comment il atteint chaque arme :**
 
-| Arme | Mécanisme | Pourquoi celui-là |
-|---|---|---|
-| `lumencast-js` | **aucun mécanisme neuf** — le job `conformance` de `ci.yml` fait déjà `actions/checkout` de `Lumencast/lumencast-protocol` et passe `LUMENCAST_PROTOCOL_REPO`. Le corpus s'ajoute à ce run | Le chemin existe, éprouvé ; en inventer un second ici serait du travail pour rien |
-| **Orion** | fetch du corpus **au commit épinglé** par un fichier de pin versionné dans Orion, + une étape **warn-only** qui compare le pin à la tête amont | Un fetch sur `main` flottant rendrait la CI d'Orion rouge sur un commit d'un autre dépôt, sans commit d'Orion — un rouge qu'aucun auteur ne peut corriger dans sa PR. Le pin rend le build reproductible ; l'avertissement rend la dérive **visible** au lieu de silencieuse |
+| Arme           | Mécanisme                                                                                                                                                                                  | Pourquoi celui-là                                                                                                                                                                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lumencast-js` | **aucun mécanisme neuf** — le job `conformance` de `ci.yml` fait déjà `actions/checkout` de `Lumencast/lumencast-protocol` et passe `LUMENCAST_PROTOCOL_REPO`. Le corpus s'ajoute à ce run | Le chemin existe, éprouvé ; en inventer un second ici serait du travail pour rien                                                                                                                                                                                            |
+| **Orion**      | fetch du corpus **au commit épinglé** par un fichier de pin versionné dans Orion, + une étape **warn-only** qui compare le pin à la tête amont                                             | Un fetch sur `main` flottant rendrait la CI d'Orion rouge sur un commit d'un autre dépôt, sans commit d'Orion — un rouge qu'aucun auteur ne peut corriger dans sa PR. Le pin rend le build reproductible ; l'avertissement rend la dérive **visible** au lieu de silencieuse |
 
 La règle qui sépare les deux niveaux : **un verdict divergent est bloquant** (c'est
 l'invariant, il casse les deux CI) ; **un corpus amont plus récent que le pin est un
@@ -652,7 +652,7 @@ reproduit pas ici.
    `conformance` existant, l'arme Orion par fetch au commit épinglé. Un **verdict
    divergent** fait échouer les deux CI (bloquant) ; un **corpus amont plus récent que
    le pin** produit un avertissement, jamais un rouge (A5.5).
-6 bis. **Le pin est vérifiable** : l'étape de fraîcheur d'Orion signale un pin périmé
+   6 bis. **Le pin est vérifiable** : l'étape de fraîcheur d'Orion signale un pin périmé
    sur un corpus modifié en amont, et reste silencieuse quand il est à jour. Une garde
    qui ne s'est jamais exprimée n'a jamais été prouvée.
 7. **R9 tenu** : le diagnostic porte le **chemin indexé** de l'entrée fautive
@@ -663,11 +663,11 @@ reproduit pas ici.
 
 Deux issues, pas une :
 
-| # | Dépôt | Périmètre | RC |
-|---|---|---|---|
-| 0 | **lumencast-protocol** | le corpus d'entrées (`conformance/v1/fixtures/`) — entrée, verdict, classe de motif. **Précède les deux autres** : sans domicile, elles écrivent chacune leur copie | — |
-| 1 | **Orion** | `isPublicHostEntry` + refus sur la liste déclarée + filtrage à la synthèse embedded-local + fetch épinglé du corpus + garde de fraîcheur. **Inventaire du parc rendu dans l'issue avant merge** | 1-5, 6 (arme Go), 6 bis, 7 |
-| 2 | **lumencast-js** | miroir du plancher dans `host-allow.ts`, corpus branché sur le job `conformance` existant | 6 (arme TS) |
+| #   | Dépôt                  | Périmètre                                                                                                                                                                                       | RC                         |
+| --- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 0   | **lumencast-protocol** | le corpus d'entrées (`conformance/v1/fixtures/`) — entrée, verdict, classe de motif. **Précède les deux autres** : sans domicile, elles écrivent chacune leur copie                             | —                          |
+| 1   | **Orion**              | `isPublicHostEntry` + refus sur la liste déclarée + filtrage à la synthèse embedded-local + fetch épinglé du corpus + garde de fraîcheur. **Inventaire du parc rendu dans l'issue avant merge** | 1-5, 6 (arme Go), 6 bis, 7 |
+| 2   | **lumencast-js**       | miroir du plancher dans `host-allow.ts`, corpus branché sur le job `conformance` existant                                                                                                       | 6 (arme TS)                |
 
 **Recommandation de dispatch : Forge (Orion), pas Conduit.** Le motif n'est **pas**
 « rien ne casse » — ce serait faux : un bundle **stocké** qui déclare un littéral IP
