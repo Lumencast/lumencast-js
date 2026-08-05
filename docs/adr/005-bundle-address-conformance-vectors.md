@@ -1,8 +1,8 @@
 # ADR 005 — L'adresse d'un bundle est définie par des vecteurs, pas par une implémentation
 
-- **Status**: proposed
+- **Status**: accepted
 - **Date**: 2026-08-05
-- **Decided**: —
+- **Decided**: 2026-08-05
 - **Deciders**: @ClodoCapeo
 - **Author**: Atlas
 - **Supersedes**: —
