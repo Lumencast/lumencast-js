@@ -10,6 +10,17 @@ describe("canonicalize", () => {
   it("emits no insignificant whitespace", () => {
     expect(canonicalize({ a: [1, 2, { x: "hi" }] })).toBe('{"a":[1,2,{"x":"hi"}]}');
   });
+
+  it("omits members with no JSON representation, like the wire form does", () => {
+    expect(canonicalize({ a: 1, b: undefined })).toBe('{"a":1}');
+    expect(canonicalize({ a: 1, f: () => 0, s: Symbol("x") })).toBe('{"a":1}');
+    expect(canonicalize({ o: { a: undefined, b: 1 } })).toBe('{"o":{"b":1}}');
+    expect(canonicalize({ a: null })).toBe('{"a":null}');
+  });
+
+  it("still emits null for such values as array elements", () => {
+    expect(canonicalize([1, undefined, 2])).toBe(JSON.stringify([1, undefined, 2]));
+  });
 });
 
 describe("hashInlineBundle", () => {
@@ -28,6 +39,12 @@ describe("hashInlineBundle", () => {
     const a = await hashInlineBundle({ a: 1 });
     const b = await hashInlineBundle({ a: 2 });
     expect(a).not.toBe(b);
+  });
+
+  it("hashes an undefined-valued member identically to an absent one", async () => {
+    const a = await hashInlineBundle({ scene_id: "x", metadata: undefined });
+    const b = await hashInlineBundle({ scene_id: "x" });
+    expect(a).toBe(b);
   });
 
   it("zeros out scene_version before hashing (per LSML 1.0 §3)", async () => {
