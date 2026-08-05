@@ -28,12 +28,13 @@ export async function hashBundle<T extends { scene_version: string }>(bundle: T)
   return { ...bundle, scene_version: `sha256:${hex}` };
 }
 
-function stringify(v: unknown): string {
+function stringify(value: unknown, key = ""): string {
+  const v = toJSONValue(value, key);
   if (v === null) return "null";
   if (typeof v === "boolean" || typeof v === "number") return JSON.stringify(v);
   if (typeof v === "string") return JSON.stringify(v);
   if (Array.isArray(v)) {
-    return "[" + v.map(stringify).join(",") + "]";
+    return "[" + v.map((el, i) => stringify(el, String(i))).join(",") + "]";
   }
   if (typeof v === "object") {
     const obj = v as Record<string, unknown>;
@@ -41,12 +42,24 @@ function stringify(v: unknown): string {
     // JSON.stringify, which is what actually goes on the wire. Hashing it as
     // `null` would address a shape that is never transmitted.
     const keys = Object.keys(obj)
-      .filter((k) => hasJsonRepresentation(obj[k]))
+      .filter((k) => hasJsonRepresentation(toJSONValue(obj[k], k)))
       .sort();
-    return "{" + keys.map((k) => JSON.stringify(k) + ":" + stringify(obj[k])).join(",") + "}";
+    return "{" + keys.map((k) => JSON.stringify(k) + ":" + stringify(obj[k], k)).join(",") + "}";
   }
   // undefined / function / symbol as an array element — JSON.stringify emits null.
   return "null";
+}
+
+/** JSON.stringify substitutes `value.toJSON(key)` before serializing. Applied
+ *  once per position, never to its own result — same as the spec. */
+function toJSONValue(v: unknown, key: string): unknown {
+  if (v !== null && typeof v === "object") {
+    const { toJSON } = v as { toJSON?: unknown };
+    if (typeof toJSON === "function") {
+      return (toJSON as (this: unknown, k: string) => unknown).call(v, key);
+    }
+  }
+  return v;
 }
 
 function hasJsonRepresentation(v: unknown): boolean {
